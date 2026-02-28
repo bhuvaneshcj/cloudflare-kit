@@ -3,8 +3,12 @@
 The all-in-one toolkit for building Cloudflare Workers with simple, clear, beginner-friendly APIs.
 
 [![npm version](https://img.shields.io/npm/v/cloudflare-kit.svg)](https://www.npmjs.com/package/cloudflare-kit)
+[![npm downloads](https://img.shields.io/npm/dm/cloudflare-kit.svg)](https://www.npmjs.com/package/cloudflare-kit)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-blue.svg)](https://www.typescriptlang.org/)
+[![Bundle Size](https://img.shields.io/bundlephobia/min/cloudflare-kit)](https://bundlephobia.com/package/cloudflare-kit)
+
+> **Latest:** v2.0.0 - Enterprise Storage with streaming, multipart uploads, and signed URLs
 
 ## Features
 
@@ -46,7 +50,137 @@ app.get("/users", () => {
 export default app;
 ```
 
-## Enterprise Features (New in v1.0)
+## Enterprise Features (New in v2.0)
+
+### 🚀 Enterprise Storage
+
+Enterprise-grade R2 storage with streaming uploads, multipart support, and signed URLs:
+
+```typescript
+import { createStorage } from "cloudflare-kit";
+
+const storage = createStorage({
+  binding: env.STORAGE,
+  maxFileSize: 100 * 1024 * 1024, // 100MB
+  allowedMimeTypes: ["image/jpeg", "image/png", "application/pdf"]
+});
+
+// Streaming upload (files <100MB)
+await storage.uploadStream("file.pdf", request.body, {
+  contentType: "application/pdf"
+});
+
+// Multipart upload (files >100MB) with progress
+await storage.uploadMultipart("large.zip", stream, fileSize, {
+  onProgress: (p) => console.log(`${p.percentage}% uploaded`)
+});
+
+// Auto-detect strategy
+await storage.uploadFromRequest(request, "file.pdf");
+
+// Create signed URL for secure uploads
+const signedUrl = await storage.createSignedUploadUrl("file.pdf", {
+  expiration: 3600 // 1 hour
+});
+```
+
+### 🔒 Enterprise Error System
+
+Structured error handling with codes and automatic HTTP responses:
+
+```typescript
+import { HttpError, ValidationError, handleError } from "cloudflare-kit";
+
+// Throw semantic errors
+throw HttpError.notFound("User not found");
+throw ValidationError.field("email", "Invalid email format");
+throw new RateLimitError("Too many requests", 60);
+
+// Global error handling
+app.use(async (c, next) => {
+  try {
+    await next();
+  } catch (error) {
+    return handleError(error);
+  }
+});
+```
+
+### 🔌 Plugin System
+
+Extensible architecture with lifecycle hooks:
+
+```typescript
+import { definePlugin } from "cloudflare-kit";
+
+const metricsPlugin = definePlugin({
+  name: "metrics",
+  version: "1.0.0",
+  hooks: {
+    "request:start": async (context) => {
+      context.set("startTime", Date.now());
+    },
+    "request:end": async (context) => {
+      const duration = Date.now() - context.get("startTime");
+      console.log(`Request took ${duration}ms`);
+    }
+  }
+});
+
+app.use(registerPlugin(metricsPlugin));
+```
+
+### ⚡ Distributed Rate Limiting
+
+Production-ready rate limiting with KV or Memory stores:
+
+```typescript
+import { createRateLimiter, createKVRateLimitStore } from "cloudflare-kit";
+
+const rateLimiter = createRateLimiter({
+  store: createKVRateLimitStore(env.RATE_LIMIT_KV),
+  maxRequests: 100,
+  windowMs: 60000 // 1 minute
+});
+
+app.use(rateLimit({ limiter: rateLimiter }));
+```
+
+## What's New in v2.0
+
+### Added
+- **Enterprise Storage Module**: Streaming uploads, multipart uploads, signed URLs
+- **Storage Error Classes**: 9 specialized error types for storage operations
+- **File Validation**: MIME type, extension, and custom validators
+- **Progress Tracking**: Real-time upload progress for multipart uploads
+- **Range Downloads**: Partial content support for video streaming
+- **Batch Operations**: Efficient bulk delete operations
+
+### Changed
+- Complete storage service rewrite with enterprise-grade architecture
+- Full TypeScript coverage for all storage operations
+- Improved error messages with human-readable formatting
+
+### Migration from v1.x
+
+v2.0 is backward compatible. Existing storage code continues to work:
+
+```typescript
+// v1.x style (still works)
+const storage = createStorage({ binding: env.STORAGE });
+
+// v2.0 enhanced API
+const storage = createStorage({
+  binding: env.STORAGE,
+  maxFileSize: 100 * 1024 * 1024,
+  allowedMimeTypes: ["image/*", "application/pdf"],
+  multipart: { partSize: 5 * 1024 * 1024 }
+});
+```
+
+See [MIGRATION.md](MIGRATION.md) for detailed migration guide.
+
+## Features (from v1.0)
 
 ### Plugin System
 
