@@ -1,0 +1,88 @@
+{
+    "name": "cloudflare-kit",
+    "version": "1.0.0",
+    "description": "The enterprise-grade toolkit for building Cloudflare Workers with simple, clear APIs",
+    "keywords": [
+        "cloudflare",
+        "workers",
+        "edge",
+        "serverless",
+        "framework",
+        "api",
+        "backend",
+        "d1",
+        "kv",
+        "r2",
+        "queue",
+        "typescript",
+        "router",
+        "middleware",
+        "auth",
+        "jwt",
+        "cache",
+        "storage",
+        "rate-limiting",
+        "validation",
+        "logging",
+        "plugins"
+    ],
+    "homepage": "https://github.com/bhuvaneshcj/cloudflare-stack#readme",
+    "bugs": {
+        "url": "https://github.com/bhuvaneshcj/cloudflare-stack/issues"
+    },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/bhuvaneshcj/cloudflare-stack.git"
+    },
+    "license": "MIT",
+    "author": "Bhuvanesh C <cjbhuvanesh8@gmail.com>",
+    "sideEffects": false,
+    "type": "module",
+    "main": "./dist/index.cjs",
+    "module": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+        ".": {
+            "import": {
+                "types": "./dist/index.d.ts",
+                "default": "./dist/index.js"
+            },
+            "require": {
+                "types": "./dist/index.d.cts",
+                "default": "./dist/index.cjs"
+            }
+        },
+        "./package.json": "./package.json"
+    },
+    "files": [
+        "dist",
+        "README.md",
+        "LICENSE",
+        "CHANGELOG.md",
+        "SECURITY.md",
+        "CONTRIBUTING.md"
+    ],
+    "engines": {
+        "node": ">=18.0.0"
+    },
+    "scripts": {
+        "build": "tsup",
+        "dev": "tsup --watch",
+        "typecheck": "tsc --noEmit",
+        "lint": "tsc --noEmit",
+        "prepublishOnly": "npm run build"
+    },
+    "devDependencies": {
+        "@cloudflare/workers-types": "^4.20240208.0",
+        "tsup": "^8.0.2",
+        "typescript": "^5.3.3"
+    },
+    "peerDependencies": {
+        "@cloudflare/workers-types": "^4.0.0"
+    },
+    "peerDependenciesMeta": {
+        "@cloudflare/workers-types": {
+            "optional": true
+        }
+    }
+}
