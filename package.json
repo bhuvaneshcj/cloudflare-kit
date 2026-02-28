@@ -26,13 +26,13 @@
         "logging",
         "plugins"
     ],
-    "homepage": "https://github.com/bhuvaneshcj/cloudflare-stack#readme",
+    "homepage": "https://github.com/bhuvaneshcj/cloudflare-kit#readme",
     "bugs": {
-        "url": "https://github.com/bhuvaneshcj/cloudflare-stack/issues"
+        "url": "https://github.com/bhuvaneshcj/cloudflare-kit/issues"
     },
     "repository": {
         "type": "git",
-        "url": "git+https://github.com/bhuvaneshcj/cloudflare-stack.git"
+        "url": "git+https://github.com/bhuvaneshcj/cloudflare-kit.git"
     },
     "license": "MIT",
     "author": "Bhuvanesh C <cjbhuvanesh8@gmail.com>",

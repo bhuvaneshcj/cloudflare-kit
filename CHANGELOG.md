@@ -57,4 +57,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Tree-shakeable exports
 - 20KB bundle size
 
-[1.0.0]: https://github.com/bhuvaneshcj/cloudflare-stack/releases/tag/v1.0.0
+[1.0.0]: https://github.com/bhuvaneshcj/cloudflare-kit/releases/tag/v1.0.0

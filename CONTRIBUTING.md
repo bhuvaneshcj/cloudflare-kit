@@ -42,7 +42,7 @@ Enhancement suggestions are welcome. Please provide:
 
 ```bash
 # Clone the repository
-git clone https://github.com/bhuvaneshcj/cloudflare-stack.git
+git clone https://github.com/bhuvaneshcj/cloudflare-kit.git
 cd cloudflare-kit
 
 # Install dependencies
