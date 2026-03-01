@@ -69,6 +69,11 @@ export interface AuthResult {
 export function createAuth(options: AuthOptions) {
     const sessionDuration = options.sessionDuration || 60 * 60 * 24 * 7; // 7 days default
 
+    // Enforce minimum JWT secret length (256 bits = 32 bytes)
+    if (options.jwtSecret.length < 32) {
+        throw new Error("JWT secret must be at least 32 characters for security");
+    }
+
     return {
         /**
          * Create a JWT token for a user
@@ -124,6 +129,22 @@ export function createAuth(options: AuthOptions) {
 
                 if (!encodedHeader || !encodedPayload || !encodedSignature) {
                     return { success: false, error: "Invalid token format" };
+                }
+
+                // Parse and validate header first (CRITICAL: prevents alg=none attack)
+                let header: { alg?: string; typ?: string };
+                try {
+                    header = JSON.parse(base64urlDecode(encodedHeader));
+                } catch {
+                    return { success: false, error: "Invalid token header" };
+                }
+
+                // STRICT algorithm validation - prevents algorithm confusion attacks
+                if (header.alg !== "HS256") {
+                    return { success: false, error: "Invalid algorithm" };
+                }
+                if (header.typ !== "JWT") {
+                    return { success: false, error: "Invalid token type" };
                 }
 
                 // Verify signature
