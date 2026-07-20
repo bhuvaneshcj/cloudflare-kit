@@ -1,6 +1,6 @@
 {
     "name": "cloudflare-kit",
-    "version": "3.0.0",
+    "version": "4.0.0",
     "description": "The enterprise-grade toolkit for building Cloudflare Workers with simple, clear APIs",
     "keywords": [
         "cloudflare",
@@ -92,14 +92,14 @@
         "prepublishOnly": "npm run build && npm test"
     },
     "devDependencies": {
-        "@cloudflare/workers-types": "^4.20240208.0",
+        "@cloudflare/workers-types": "^5.20260719.1",
         "prettier": "^3.9.5",
         "tsup": "^8.0.2",
         "typescript": "^5.3.3",
         "vitest": "^2.1.0"
     },
     "peerDependencies": {
-        "@cloudflare/workers-types": "^4.0.0"
+        "@cloudflare/workers-types": "^5.0.0"
     },
     "peerDependenciesMeta": {
         "@cloudflare/workers-types": {

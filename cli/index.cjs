@@ -38,44 +38,56 @@ function createProject(name) {
         scripts: {
             dev: "wrangler dev",
             deploy: "wrangler deploy",
-            "db:migrate": "wrangler d1 migrations apply",
+            types: "wrangler types",
+            "db:migrate": "wrangler d1 migrations apply DB --local",
         },
         dependencies: {
-            "cloudflare-kit": "^3.0.0",
+            "cloudflare-kit": "^4.0.0",
         },
         devDependencies: {
-            wrangler: "^3.0.0",
+            "@cloudflare/workers-types": "^5.0.0",
+            wrangler: "^4.0.0",
             typescript: "^5.3.0",
         },
     };
 
     fs.writeFileSync(path.join(name, "package.json"), JSON.stringify(packageJson, null, 2));
 
-    // Create wrangler.toml
-    const wranglerToml = `name = "${name}"
-main = "src/index.ts"
-compatibility_date = "2024-01-01"
-
-[vars]
-ENVIRONMENT = "development"
-
-[[d1_databases]]
-binding = "DB"
-database_name = "${name}-db"
-database_id = ""
-
-[[kv_namespaces]]
-binding = "CACHE"
-id = ""
-
-[[r2_buckets]]
-binding = "STORAGE"
-bucket_name = "${name}-storage"
+    // Prefer wrangler.jsonc (Wrangler 4)
+    const wranglerJsonc = `{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "${name}",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-07-20",
+  "compatibility_flags": ["nodejs_compat"],
+  "vars": {
+    "ENVIRONMENT": "development"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "${name}-db",
+      "database_id": "replace-with-your-d1-id"
+    }
+  ],
+  "kv_namespaces": [
+    {
+      "binding": "CACHE",
+      "id": "replace-with-your-kv-id"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "STORAGE",
+      "bucket_name": "${name}-storage"
+    }
+  ]
+}
 `;
 
-    fs.writeFileSync(path.join(name, "wrangler.toml"), wranglerToml);
+    fs.writeFileSync(path.join(name, "wrangler.jsonc"), wranglerJsonc);
 
-    // Create tsconfig.json
+    // Create tsconfig.json — Env types come from `npm run types` (wrangler types)
     const tsConfig = {
         compilerOptions: {
             target: "ES2022",
@@ -86,21 +98,21 @@ bucket_name = "${name}-storage"
             strict: true,
             esModuleInterop: true,
             skipLibCheck: true,
+            noEmit: true,
         },
-        include: ["src/**/*"],
+        include: ["src/**/*", "worker-configuration.d.ts"],
     };
 
     fs.writeFileSync(path.join(name, "tsconfig.json"), JSON.stringify(tsConfig, null, 2));
 
     // Create main index.ts
-    const indexTs = `import { 
-  createApp, 
-  createDatabase, 
-  createCache, 
+    const indexTs = `import {
+  createApp,
+  createDatabase,
+  createCache,
   createAuth,
   createLogger,
   jsonResponse,
-  errorResponse,
   corsMiddleware,
   jsonMiddleware
 } from 'cloudflare-kit';
@@ -113,22 +125,18 @@ export interface Env {
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
-    // Create services
     const logger = createLogger({ level: 'info', service: '${name}' });
     const database = createDatabase({ binding: env.DB });
     const cache = createCache({ binding: env.CACHE, defaultTTL: 300 });
     const auth = createAuth({ jwtSecret: env.JWT_SECRET });
 
-    // Create app
     const app = createApp({ database, cache, auth, logger });
 
-    // Add middleware
     app.use(corsMiddleware());
     app.use(jsonMiddleware());
 
-    // Routes
     app.get('/', () => {
-      return jsonResponse({ 
+      return jsonResponse({
         message: 'Welcome to ${name}!',
         timestamp: new Date().toISOString()
       });
@@ -138,7 +146,6 @@ export default {
       return jsonResponse({ status: 'ok' });
     });
 
-    // Handle request
     return app.fetch(request, env, ctx);
   }
 };
@@ -146,11 +153,12 @@ export default {
 
     fs.writeFileSync(path.join(name, "src", "index.ts"), indexTs);
 
-    console.log("\\n✅ Project created successfully!");
-    console.log(`\\nNext steps:`);
+    console.log("\n✅ Project created successfully!");
+    console.log(`\nNext steps:`);
     console.log(`  cd ${name}`);
     console.log(`  npm install`);
     console.log(`  npx wrangler login`);
+    console.log(`  npm run types   # generate Env types from wrangler.jsonc`);
     console.log(`  npm run dev`);
 }
 

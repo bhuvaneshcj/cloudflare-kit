@@ -120,7 +120,17 @@ export type { ScheduledEvent, ScheduledHandler, Scheduler, ScheduledApp } from "
 
 // Email (Feature 7)
 export { createMailer } from "./email/index";
-export type { SendEmail, EmailMessage, EmailAddress, EmailOptions, MailerOptions, EmailResult, Mailer } from "./email/index";
+export type {
+    SendEmail,
+    EmailMessage,
+    EmailMessageBuilder,
+    EmailSendResult,
+    EmailAddress,
+    EmailOptions,
+    MailerOptions,
+    EmailResult,
+    Mailer,
+} from "./email/index";
 
 // Analytics (Feature 8)
 export { createAnalytics } from "./analytics/index";

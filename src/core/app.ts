@@ -188,7 +188,7 @@ export function createApp<Env extends Record<string, unknown> = Record<string, u
 
         const pluginApp = {
             name: "cloudflare-kit",
-            version: "3.0.0",
+            version: "4.0.0",
             config: {},
             logger: noopLogger,
             on: registry.on.bind(registry),

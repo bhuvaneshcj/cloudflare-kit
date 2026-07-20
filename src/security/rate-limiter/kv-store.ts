@@ -8,21 +8,14 @@
  * is best-effort for multi-isolate deployments.
  */
 
+import type { KVNamespace } from "@cloudflare/workers-types";
 import type { RateLimitStore, RateLimitData } from "./types";
 
 /**
  * Configuration for KV rate limit store
  */
 export interface KVRateLimitConfig {
-    /**
-     * KV namespace binding
-     */
     binding: KVNamespace;
-
-    /**
-     * Key prefix for rate limit entries
-     * @default 'ratelimit:'
-     */
     prefix?: string;
 }
 

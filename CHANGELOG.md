@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.0] - 2026-07-20
+
+Aligned with the latest Cloudflare Workers stack (workers-types **v5**, Wrangler **4**).
+
+### Breaking
+
+- Peer / CLI scaffold: `@cloudflare/workers-types` **^5** (was ^4)
+- Package / CLI dependency → `4.0.0`
+- Removed hand-rolled ambient Workers globals; use `@cloudflare/workers-types` or `wrangler types`
+- D1 types re-exported from workers-types (binding is `prepare`/`batch`/`exec`/`withSession` — no fake `query`/`execute`)
+- Durable Object WebSocket helpers use official `DurableObjectState` / `DurableObjectStorage`
+- Email: prefer Cloudflare Email Service `send_email` + `EmailMessageBuilder`; kit `EmailMessage` is now an alias of that builder (not the MIME envelope type)
+- CLI scaffolds `wrangler.jsonc`, `compatibility_date = "2026-07-20"`, `nodejs_compat`, Wrangler **^4**
+
+### Added / improved
+
+- Official D1 session types (`D1DatabaseSession`, bookmarks, constraints)
+- Email exports: `EmailMessageBuilder`, `EmailSendResult`, official `SendEmail`
+- CLI `npm run types` → `wrangler types` for Env generation
+
 ## [3.0.0] - 2026-07-20
 
 Major quality release: deepen existing APIs (no new product modules). Some behaviors are intentionally stricter.

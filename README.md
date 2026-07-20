@@ -111,7 +111,7 @@ Middleware returns `Response` to short-circuit, or `void`/`undefined` to continu
 | **createWebSocketHandler** | WebSocket server with Durable Object support        | WebSocket            |
 | **createOAuth**            | OAuth 2.0 for Google, GitHub, Discord               | Built-in             |
 | **createScheduler**        | Cron job scheduling                                 | Built-in             |
-| **createMailer**           | Email via Workers Email binding (MailChannels deprecated fallback) | Email                |
+| **createMailer**           | Email via Cloudflare Email Service (`send_email`; MailChannels deprecated) | Email                |
 | **createAnalytics**        | Analytics Engine wrapper                            | Analytics Engine     |
 | **createAI**               | Workers AI for text, embeddings, streaming          | AI                   |
 | **createSSE**              | Server-Sent Events and streaming responses          | Built-in             |
@@ -623,13 +623,14 @@ export default createScheduledApp(app, scheduler);
 
 ### createMailer
 
-Email sending via MailChannels with template support.
+Email via Cloudflare Email Service (`send_email` binding). Pass the binding into `createMailer`; MailChannels HTTP is a deprecated fallback only.
 
 ```typescript
 import { createMailer } from "cloudflare-kit";
 
 const mailer = createMailer({
     from: { email: "noreply@example.com", name: "My App" },
+    binding: env.EMAIL, // send_email binding from wrangler
 });
 
 // Simple email
@@ -656,6 +657,14 @@ await mailer.send({
     subject: "Newsletter",
     html: "<p>Monthly update...</p>",
 });
+```
+
+Configure the binding (Wrangler 4 / `wrangler.jsonc`):
+
+```jsonc
+{
+  "send_email": [{ "name": "EMAIL" }]
+}
 ```
 
 ### createAnalytics
@@ -1283,12 +1292,62 @@ async function verifyPassword(password: string, hash: string): Promise<boolean> 
 
 ---
 
-## wrangler.toml Reference
+## Wrangler config reference
+
+Prefer `wrangler.jsonc` with Wrangler 4. Generate Env types with `npx wrangler types`.
+
+```jsonc
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "my-worker",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-07-20",
+  "compatibility_flags": ["nodejs_compat"],
+  "vars": {
+    "JWT_SECRET": "change-me-to-32-char-secret-in-production",
+    "GOOGLE_CLIENT_ID": "your-google-client-id"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "my-database",
+      "database_id": "your-database-id"
+    }
+  ],
+  "kv_namespaces": [
+    { "binding": "CACHE", "id": "your-kv-id" },
+    { "binding": "RATE_LIMIT_KV", "id": "your-kv-id-2" }
+  ],
+  "r2_buckets": [{ "binding": "BUCKET", "bucket_name": "my-bucket" }],
+  "queues": {
+    "producers": [{ "binding": "QUEUE", "queue": "my-queue" }],
+    "consumers": [
+      {
+        "queue": "my-queue",
+        "max_batch_size": 10,
+        "max_batch_timeout": 30
+      }
+    ]
+  },
+  "analytics_engine_datasets": [
+    { "binding": "ANALYTICS", "dataset": "api_metrics" }
+  ],
+  "send_email": [{ "name": "EMAIL" }],
+  "ai": { "binding": "AI" },
+  "durable_objects": {
+    "bindings": [{ "name": "CHAT_ROOMS", "class_name": "ChatRoom" }]
+  },
+  "migrations": [{ "tag": "v1", "new_classes": ["ChatRoom"] }]
+}
+```
+
+Equivalent TOML (still supported):
 
 ```toml
 name = "my-worker"
 main = "src/worker.ts"
-compatibility_date = "2026-01-01"
+compatibility_date = "2026-07-20"
+compatibility_flags = [ "nodejs_compat" ]
 
 # Environment variables
 [vars]
@@ -1309,12 +1368,10 @@ database_id = "your-database-id"
 [[kv_namespaces]]
 binding = "CACHE"
 id = "your-kv-id"
-name = "cache"
 
 [[kv_namespaces]]
 binding = "RATE_LIMIT_KV"
 id = "your-kv-id-2"
-name = "rate-limits"
 
 # R2 Bucket - used by createStorage()
 [[r2_buckets]]
@@ -1336,10 +1393,9 @@ max_batch_timeout = 30
 binding = "ANALYTICS"
 dataset = "api_metrics"
 
-# Email - used by createMailer()
-[[email_bind]]
+# Email Service - used by createMailer()
+[[send_email]]
 name = "EMAIL"
-destination_address = "notifications@example.com"
 
 # Workers AI - used by createAI()
 [ai]

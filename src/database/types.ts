@@ -1,36 +1,24 @@
 /**
  * Database Type Definitions
+ *
+ * Re-exports official Cloudflare Workers D1 types (workers-types v5+).
  */
 
-export interface D1Result<T = unknown> {
-    results: T[];
-    success: boolean;
-    error?: string;
-    meta?: {
-        duration: number;
-        changes?: number;
-        last_row_id?: number;
-        rows_read?: number;
-        rows_written?: number;
-    };
-}
+export type {
+    D1Database,
+    D1PreparedStatement,
+    D1Result,
+    D1Response,
+    D1Meta,
+    D1ExecResult,
+    D1DatabaseSession,
+    D1SessionBookmark,
+    D1SessionConstraint,
+} from "@cloudflare/workers-types";
 
-export interface D1Database {
-    prepare(query: string): D1PreparedStatement;
-    batch<T = unknown>(statements: D1PreparedStatement[]): Promise<D1Result<T>[]>;
-    exec(query: string): Promise<D1Result>;
-    query<T = unknown>(query: string, params?: unknown[]): Promise<D1Result<T>>;
-    execute(query: string, params?: unknown[]): Promise<D1Result>;
-}
-
-export interface D1PreparedStatement {
-    bind(...values: unknown[]): D1PreparedStatement;
-    first<T = unknown>(): Promise<T | null>;
-    run(): Promise<D1Result>;
-    all<T = unknown>(): Promise<D1Result<T>>;
-    raw<T = unknown>(): Promise<T[]>;
-}
+import type { D1Database } from "@cloudflare/workers-types";
 
 export interface DatabaseOptions {
+    /** Official D1 database binding from the Worker env */
     binding: D1Database;
 }

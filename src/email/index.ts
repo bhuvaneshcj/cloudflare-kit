@@ -1,88 +1,55 @@
 /**
  * Email Module
  *
- * Provides email sending capabilities via MailChannels API.
- * Works with Cloudflare Workers without external dependencies.
+ * Prefer Cloudflare Email Service (`send_email` binding) with the structured
+ * message builder. MailChannels HTTP fallback is deprecated.
  */
 
-function escapeHtml(value: string): string {
-    return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
-}
+import type {
+    EmailAddress as CfEmailAddress,
+    EmailMessageBuilder,
+    SendEmail,
+} from "@cloudflare/workers-types";
+
+export type { SendEmail, EmailMessageBuilder, EmailSendResult } from "@cloudflare/workers-types";
 
 /**
- * Cloudflare SendEmail binding interface
- */
-export interface SendEmail {
-    send(message: EmailMessage): Promise<void>;
-}
-
-/**
- * Email message for Cloudflare binding
- */
-export interface EmailMessage {
-    to: string | string[];
-    from: string;
-    subject: string;
-    text?: string;
-    html?: string;
-    headers?: Record<string, string>;
-}
-
-/**
- * Email address type
+ * Kit-facing address (name optional for DX; converted for the binding).
+ * Official workers-types `EmailAddress` requires `name: string`.
  */
 export interface EmailAddress {
-    /** Email address */
     email: string;
-    /** Display name (optional) */
     name?: string;
 }
 
-/**
- * Email options for sending
- */
+/** @deprecated Use EmailMessageBuilder — alias kept for cloudflare-kit consumers */
+export type EmailMessage = EmailMessageBuilder;
+
+export type EmailRecipient = string | EmailAddress | Array<string | EmailAddress>;
+
 export interface EmailOptions {
-    /** Recipient(s) */
     to: EmailAddress | EmailAddress[];
-    /** Email subject */
     subject: string;
-    /** HTML body (optional) */
     html?: string;
-    /** Plain text body (optional) */
     text?: string;
-    /** CC recipients (optional) */
     cc?: EmailAddress | EmailAddress[];
-    /** BCC recipients (optional) */
     bcc?: EmailAddress | EmailAddress[];
-    /** Reply-to address (optional) */
     replyTo?: EmailAddress;
+    headers?: Record<string, string>;
 }
 
-/**
- * Mailer options
- */
 export interface MailerOptions {
-    /** Default from address */
     from: EmailAddress;
-    /** Cloudflare Email binding (optional, falls back to MailChannels API) */
+    /** Cloudflare Email Service binding (env.EMAIL / send_email) */
     binding?: SendEmail;
 }
 
-/**
- * Email sending result
- */
 export interface EmailResult {
-    /** Whether the email was sent successfully */
     success: boolean;
-    /** Message ID if available */
     messageId?: string;
-    /** Error message if sending failed */
     error?: string;
 }
 
-/**
- * MailChannels API request body
- */
 interface MailChannelsRequest {
     personalizations: Array<{
         to: Array<{ email: string; name?: string }>;
@@ -95,240 +62,142 @@ interface MailChannelsRequest {
     content: Array<{ type: string; value: string }>;
 }
 
-/**
- * Convert EmailAddress to string or MailChannels format
- */
+function toCfAddress(addr: string | EmailAddress): string | CfEmailAddress {
+    if (typeof addr === "string") return addr;
+    return { email: addr.email, name: addr.name ?? "" };
+}
+
+function toCfRecipients(
+    addr: EmailAddress | EmailAddress[] | undefined,
+): string | CfEmailAddress | Array<string | CfEmailAddress> | undefined {
+    if (!addr) return undefined;
+    if (Array.isArray(addr)) {
+        return addr.map((a) => (a.name ? { email: a.email, name: a.name } : a.email));
+    }
+    return addr.name ? { email: addr.email, name: addr.name } : addr.email;
+}
+
 function normalizeAddress(addr: EmailAddress | EmailAddress[]): Array<{ email: string; name?: string }> {
     const addresses = Array.isArray(addr) ? addr : [addr];
-    return addresses.map((a) => ({
-        email: a.email,
-        name: a.name,
-    }));
+    return addresses.map((a) => ({ email: a.email, name: a.name }));
 }
 
 /**
- * Create a mailer for sending emails
- *
- * @example
- * ```typescript
- * const mailer = createMailer({
- *   from: { email: 'noreply@example.com', name: 'My App' },
- *   // Optional: use Cloudflare Email binding instead of MailChannels API
- *   // binding: env.SEND_EMAIL
- * });
- *
- * // Send a simple email
- * const result = await mailer.send({
- *   to: { email: 'user@example.com', name: 'John Doe' },
- *   subject: 'Welcome!',
- *   text: 'Welcome to our app!',
- *   html: '<h1>Welcome!</h1><p>Welcome to our app!</p>'
- * });
- *
- * if (result.success) {
- *   console.log('Email sent:', result.messageId);
- * } else {
- *   console.error('Failed to send email:', result.error);
- * }
- *
- * // Send to multiple recipients
- * await mailer.send({
- *   to: [
- *     { email: 'user1@example.com' },
- *     { email: 'user2@example.com' }
- *   ],
- *   subject: 'Newsletter',
- *   html: '<p>Your monthly newsletter</p>'
- * });
- *
- * // Send using a template
- * await mailer.sendTemplate('welcome', {
- *   name: 'John',
- *   company: 'Acme Inc'
- * }, { email: 'user@example.com' });
- * ```
+ * Create a mailer for Cloudflare Email Service (preferred) or deprecated MailChannels fallback.
  */
 export function createMailer(options: MailerOptions) {
     const MAILCHANNELS_API = "https://api.mailchannels.net/tx/v1/send";
     let warnedAboutMailChannels = false;
 
-    /**
-     * Send an email
-     *
-     * Note: The MailChannels free API path is deprecated/unauthenticated and may fail.
-     * Prefer the Cloudflare Email binding when available.
-     */
-    async function send(emailOptions: EmailOptions): Promise<EmailResult> {
-        // Use Cloudflare Email binding if available
-        if (options.binding) {
-            try {
-                const message = buildBindingMessage(emailOptions);
-                await options.binding.send(message);
-                return { success: true, messageId: crypto.randomUUID() };
-            } catch (error) {
-                throw new Error(`Email binding send failed: ${error instanceof Error ? error.message : "Unknown error"}`);
-            }
+    function buildBindingMessage(emailOptions: EmailOptions): EmailMessageBuilder {
+        const to = toCfRecipients(emailOptions.to);
+        if (!to) {
+            throw new Error("Email `to` is required");
         }
 
-        // Fall back to MailChannels API (deprecated — prefer Email binding)
-        if (!warnedAboutMailChannels) {
-            warnedAboutMailChannels = true;
-            console.warn("Using the MailChannels fallback path; prefer a Cloudflare Email binding for production delivery.");
-        }
-        const requestBody = buildMailChannelsRequest(emailOptions);
-
-        const response = await fetch(MAILCHANNELS_API, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-            },
-            body: JSON.stringify(requestBody),
-        });
-
-        if (response.ok) {
-            return { success: true, messageId: crypto.randomUUID() };
-        }
-
-        const errorText = await response.text();
-        throw new Error(`MailChannels API error: ${response.status} - ${errorText}`);
-    }
-
-    /**
-     * Build EmailMessage for Cloudflare binding
-     */
-    function buildBindingMessage(emailOptions: EmailOptions): EmailMessage {
-        const to = Array.isArray(emailOptions.to) ? emailOptions.to.map((a) => a.email) : emailOptions.to.email;
-
-        const message: EmailMessage = {
+        const message: EmailMessageBuilder = {
             to,
-            from: options.from.email,
+            from: toCfAddress(options.from),
             subject: emailOptions.subject,
         };
 
-        if (emailOptions.text) {
-            message.text = emailOptions.text;
-        }
-
-        if (emailOptions.html) {
-            message.html = emailOptions.html;
-        }
+        if (emailOptions.text) message.text = emailOptions.text;
+        if (emailOptions.html) message.html = emailOptions.html;
+        if (emailOptions.cc) message.cc = toCfRecipients(emailOptions.cc);
+        if (emailOptions.bcc) message.bcc = toCfRecipients(emailOptions.bcc);
+        if (emailOptions.replyTo) message.replyTo = toCfAddress(emailOptions.replyTo);
+        if (emailOptions.headers) message.headers = emailOptions.headers;
 
         return message;
     }
 
-    /**
-     * Build MailChannels API request body
-     */
     function buildMailChannelsRequest(emailOptions: EmailOptions): MailChannelsRequest {
         const content: Array<{ type: string; value: string }> = [];
-
-        if (emailOptions.text) {
-            content.push({ type: "text/plain", value: emailOptions.text });
-        }
-
-        if (emailOptions.html) {
-            content.push({ type: "text/html", value: emailOptions.html });
-        }
-
-        // Default to plain text if neither provided
-        if (content.length === 0) {
-            content.push({ type: "text/plain", value: "" });
-        }
+        if (emailOptions.text) content.push({ type: "text/plain", value: emailOptions.text });
+        if (emailOptions.html) content.push({ type: "text/html", value: emailOptions.html });
+        if (content.length === 0) content.push({ type: "text/plain", value: "" });
 
         const personalization: MailChannelsRequest["personalizations"][0] = {
             to: normalizeAddress(emailOptions.to),
         };
-
-        if (emailOptions.cc) {
-            personalization.cc = normalizeAddress(emailOptions.cc);
-        }
-
-        if (emailOptions.bcc) {
-            personalization.bcc = normalizeAddress(emailOptions.bcc);
-        }
+        if (emailOptions.cc) personalization.cc = normalizeAddress(emailOptions.cc);
+        if (emailOptions.bcc) personalization.bcc = normalizeAddress(emailOptions.bcc);
 
         const request: MailChannelsRequest = {
             personalizations: [personalization],
-            from: {
-                email: options.from.email,
-                name: options.from.name,
-            },
+            from: { email: options.from.email, name: options.from.name },
             subject: emailOptions.subject,
             content,
         };
-
         if (emailOptions.replyTo) {
-            request.reply_to = {
-                email: emailOptions.replyTo.email,
-                name: emailOptions.replyTo.name,
-            };
+            request.reply_to = { email: emailOptions.replyTo.email, name: emailOptions.replyTo.name };
         }
-
         return request;
     }
 
-    /**
-     * Simple template storage
-     */
+    async function send(emailOptions: EmailOptions): Promise<EmailResult> {
+        if (options.binding) {
+            const message = buildBindingMessage(emailOptions);
+            const result = await options.binding.send(message);
+            return { success: true, messageId: result.messageId || undefined };
+        }
+
+        if (!warnedAboutMailChannels) {
+            warnedAboutMailChannels = true;
+            console.warn(
+                "[cloudflare-kit] MailChannels fallback is deprecated. Use a Cloudflare Email Service send_email binding.",
+            );
+        }
+
+        const response = await fetch(MAILCHANNELS_API, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(buildMailChannelsRequest(emailOptions)),
+        });
+
+        if (!response.ok) {
+            throw new Error(`MailChannels API error: ${response.status} - ${await response.text()}`);
+        }
+        return { success: true, messageId: crypto.randomUUID() };
+    }
+
     const templates = new Map<string, string>();
 
-    /**
-     * Register a template
-     */
     function registerTemplate(name: string, html: string): void {
         templates.set(name, html);
     }
 
-    /**
-     * Send an email using a registered template
-     */
-    async function sendTemplate(templateName: string, data: Record<string, unknown>, to: EmailAddress, subject?: string): Promise<EmailResult> {
+    function escapeHtml(value: string): string {
+        return value
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#39;");
+    }
+
+    async function sendTemplate(
+        templateName: string,
+        data: Record<string, unknown>,
+        to: EmailAddress,
+        subject?: string,
+    ): Promise<EmailResult> {
         const template = templates.get(templateName);
+        if (!template) throw new Error(`Template not found: ${templateName}`);
 
-        if (!template) {
-            throw new Error(`Template not found: ${templateName}`);
-        }
-
-        // Simple variable interpolation: {{variableName}} (HTML-escaped)
         let html = template;
         for (const [key, value] of Object.entries(data)) {
-            const regex = new RegExp(`\\{\\{\\s*${key}\\s*\\}\\}`, "g");
-            html = html.replace(regex, escapeHtml(String(value)));
+            html = html.replace(new RegExp(`\\{\\{\\s*${key}\\s*\\}\\}`, "g"), escapeHtml(String(value)));
         }
-
-        // Generate plain text version by stripping HTML tags
         const text = html
             .replace(/<[^>]*>/g, "")
             .replace(/\s+/g, " ")
             .trim();
 
-        return send({
-            to,
-            subject: subject || "",
-            html,
-            text,
-        });
+        return send({ to, subject: subject || "", html, text });
     }
 
-    return {
-        /**
-         * Send an email
-         */
-        send,
-
-        /**
-         * Register an email template
-         */
-        registerTemplate,
-
-        /**
-         * Send using a template with variable interpolation
-         */
-        sendTemplate,
-    };
+    return { send, registerTemplate, sendTemplate };
 }
 
-/**
- * Mailer service type
- */
 export type Mailer = ReturnType<typeof createMailer>;

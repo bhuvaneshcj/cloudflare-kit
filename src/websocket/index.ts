@@ -55,24 +55,10 @@ export interface DurableWebSocketHandlerOptions {
     onError?: (ws: WebSocket, error: Error, ctx: DurableWebSocketContext) => void | Promise<void>;
 }
 
-/**
- * Durable Object state interface (subset for hibernation)
- */
-export interface DurableObjectState {
-    acceptWebSocket(ws: WebSocket, tags?: string[]): void;
-    getWebSockets(tag?: string): WebSocket[];
-    setWebSocketAutoResponse(request: Response | null): void;
-}
+/** Official Durable Object hibernation / storage types (workers-types v5+) */
+export type { DurableObjectState, DurableObjectStorage } from "@cloudflare/workers-types";
 
-/**
- * Durable Object storage interface
- */
-export interface DurableObjectStorage {
-    get<T>(key: string): Promise<T | undefined>;
-    put<T>(key: string, value: T): Promise<void>;
-    delete(key: string): Promise<void>;
-    list<T>(options?: { prefix?: string; limit?: number }): Promise<Map<string, T>>;
-}
+import type { DurableObjectState, DurableObjectStorage } from "@cloudflare/workers-types";
 
 /**
  * WebSocket message event
@@ -310,12 +296,7 @@ export function createDurableWebSocket(options: DurableWebSocketHandlerOptions) 
             url,
             state: {},
             durableState,
-            storage: storage || {
-                get: async () => undefined,
-                put: async () => {},
-                delete: async () => {},
-                list: async () => new Map(),
-            },
+            storage: storage ?? durableState.storage,
         };
     }
 
