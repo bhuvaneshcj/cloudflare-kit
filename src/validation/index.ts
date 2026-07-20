@@ -44,6 +44,8 @@ export interface Schema<T> {
     _type: T;
     parse(value: unknown, path?: string): ValidationResult<T>;
     optional(): Schema<T | undefined>;
+    nullable(): Schema<T | null>;
+    default(value: T): Schema<Exclude<T, undefined>>;
 }
 
 /**
@@ -55,11 +57,19 @@ class SchemaImpl<T> implements Schema<T> {
     constructor(
         protected validators: ValidatorFn[],
         protected isOptional = false,
+        protected isNullable = false,
+        protected defaultValue?: T,
     ) {}
 
     parse(value: unknown, path = ""): ValidationResult<T> {
+        if (value === undefined && this.defaultValue !== undefined) {
+            value = this.defaultValue;
+        }
         if (value === undefined && this.isOptional) {
             return { success: true, data: undefined as T };
+        }
+        if (value === null && this.isNullable) {
+            return { success: true, data: null as T };
         }
 
         const errors: ValidationErrorDetail[] = [];
@@ -77,7 +87,15 @@ class SchemaImpl<T> implements Schema<T> {
     }
 
     optional(): Schema<T | undefined> {
-        return new SchemaImpl<T | undefined>(this.validators, true);
+        return new SchemaImpl<T | undefined>(this.validators, true, this.isNullable, this.defaultValue);
+    }
+
+    nullable(): Schema<T | null> {
+        return new SchemaImpl<T | null>(this.validators, this.isOptional, true, this.defaultValue);
+    }
+
+    default(value: T): Schema<Exclude<T, undefined>> {
+        return new SchemaImpl<Exclude<T, undefined>>(this.validators, this.isOptional, this.isNullable, value as Exclude<T, undefined>);
     }
 
     protected getValidators(): ValidatorFn[] {
@@ -152,6 +170,22 @@ class StringSchema extends SchemaImpl<string> {
             },
         ]);
     }
+
+    regex(re: RegExp): StringSchema {
+        return new StringSchema([
+            ...this.getValidators().slice(1),
+            (value: unknown, path: string) =>
+                typeof value === "string" && !re.test(value) ? [{ field: path || "value", message: "String does not match required pattern" }] : [],
+        ]);
+    }
+
+    enum(values: readonly string[]): StringSchema {
+        return new StringSchema([
+            ...this.getValidators().slice(1),
+            (value: unknown, path: string) =>
+                typeof value === "string" && !values.includes(value) ? [{ field: path || "value", message: `Expected one of: ${values.join(", ")}` }] : [],
+        ]);
+    }
 }
 
 /**
@@ -191,6 +225,14 @@ class NumberSchema extends SchemaImpl<number> {
                 }
                 return [];
             },
+        ]);
+    }
+
+    enum(values: readonly number[]): NumberSchema {
+        return new NumberSchema([
+            ...this.getValidators().slice(1),
+            (value: unknown, path: string) =>
+                typeof value === "number" && !values.includes(value) ? [{ field: path || "value", message: `Expected one of: ${values.join(", ")}` }] : [],
         ]);
     }
 }
@@ -281,6 +323,7 @@ export const v = {
     array: <T>(schema: Schema<T>): ArraySchema<T> => new ArraySchema(schema),
     object: <T extends Record<string, Schema<unknown>>>(shape: T): ObjectSchema<T> => new ObjectSchema(shape),
     optional: <T>(schema: Schema<T>): Schema<T | undefined> => schema.optional(),
+    nullable: <T>(schema: Schema<T>): Schema<T | null> => schema.nullable(),
 };
 
 /**
@@ -290,6 +333,8 @@ export interface ValidatorConfig {
     body?: Schema<unknown>;
     query?: Schema<unknown>;
     params?: Schema<unknown>;
+    /** Coerce numeric and boolean query strings before validation. Defaults to false. */
+    coerceQuery?: boolean;
 }
 
 /**
@@ -322,6 +367,10 @@ export function createValidator(config: ValidatorConfig): Middleware {
         if (config.query) {
             const parsedQuery: Record<string, unknown> = {};
             for (const [key, value] of Object.entries(ctx.query || {})) {
+                if (!config.coerceQuery || typeof value !== "string") {
+                    parsedQuery[key] = value;
+                    continue;
+                }
                 const numValue = Number(value);
                 if (!isNaN(numValue) && value === String(numValue)) {
                     parsedQuery[key] = numValue;

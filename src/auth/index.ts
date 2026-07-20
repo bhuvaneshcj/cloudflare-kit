@@ -52,6 +52,8 @@ export interface AuthOptions {
     sessionDuration?: number;
     issuer?: string;
     audience?: string;
+    /** Allowed JWT expiry clock skew in seconds (default: 60). */
+    clockSkewSeconds?: number;
     database?: D1Database;
 }
 
@@ -103,6 +105,7 @@ function resolveSecretInput(input: SecretInput | undefined, env?: Record<string,
 export function createAuth(options: AuthOptions): AuthService {
     const secretInput = options.secret ?? options.jwtSecret;
     const sessionDuration = options.expiresIn ?? options.sessionDuration ?? 60 * 60 * 24 * 7;
+    const clockSkewSeconds = options.clockSkewSeconds ?? 60;
 
     function getSecret(env?: Record<string, unknown>): string {
         const secret = resolveSecretInput(secretInput, env);
@@ -216,7 +219,7 @@ export function createAuth(options: AuthOptions): AuthService {
                 if (typeof payload.exp !== "number") {
                     return { success: false, error: "Token missing expiration" };
                 }
-                if (payload.exp < Math.floor(Date.now() / 1000)) {
+                if (payload.exp + clockSkewSeconds < Math.floor(Date.now() / 1000)) {
                     return { success: false, error: "Token expired" };
                 }
 
@@ -249,6 +252,7 @@ export function createAuth(options: AuthOptions): AuthService {
             const expiresAt = new Date(Date.now() + sessionDuration * 1000);
 
             try {
+                // Sessions table schema: sessions(id TEXT PRIMARY KEY, user_id TEXT, expires_at TEXT).
                 await options.database
                     .prepare("INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, ?)")
                     .bind(sessionId, user.id, expiresAt.toISOString())
@@ -297,6 +301,10 @@ export function createAuth(options: AuthOptions): AuthService {
 
 export interface RequireAuthOptions {
     roles?: string[];
+    /** Cookie name to check before the Authorization header. */
+    cookie?: string;
+    /** Verify the credential as a database-backed session ID. */
+    session?: boolean;
 }
 
 /**
@@ -304,8 +312,9 @@ export interface RequireAuthOptions {
  */
 export function requireAuth(auth: AuthService, options: RequireAuthOptions = {}): Middleware {
     return async (context: RequestContext): Promise<Response | void> => {
-        const header = context.request.headers.get("Authorization");
-        const result = await auth.verifyToken(header, context.env);
+        const cookieValue = options.cookie ? getCookie(context.request.headers.get("Cookie"), options.cookie) : undefined;
+        const credential = cookieValue ?? context.request.headers.get("Authorization");
+        const result = options.session ? await auth.verifySession(credential ?? "") : await auth.verifyToken(credential, context.env);
 
         if (!result.success || !result.user) {
             return errorResponse(result.error || "Authentication required", 401);
@@ -324,4 +333,14 @@ export function requireAuth(auth: AuthService, options: RequireAuthOptions = {})
         (context as RequestContext & { user?: User }).user = result.user;
         return undefined;
     };
+}
+
+function getCookie(header: string | null, name: string): string | undefined {
+    if (!header) return undefined;
+    const prefix = `${name}=`;
+    return header
+        .split(";")
+        .map((part) => part.trim())
+        .find((part) => part.startsWith(prefix))
+        ?.slice(prefix.length);
 }

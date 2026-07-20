@@ -262,16 +262,17 @@ export function createOpenAPI(options: OpenAPIOptions): OpenAPIService {
         const originalDelete = app.delete.bind(app);
         const originalPatch = app.patch.bind(app);
 
-        // Override methods to capture metadata
+        // Override methods to capture metadata and forward ALL callables
         app.get = function (path: string, ...handlers: unknown[]): typeof app {
             const metadata = extractMetadata(handlers);
             if (metadata) {
                 registerRoute("get", path, metadata);
             }
-            // Call original with first handler only (simplified)
-            const firstHandler = handlers.find((h) => typeof h === "function") as Handler | undefined;
-            if (firstHandler) {
-                originalGet(path, firstHandler);
+            const callables = handlers.filter((h) => typeof h === "function") as Array<
+                import("../core/types").Middleware | Handler
+            >;
+            if (callables.length > 0) {
+                originalGet(path, ...callables);
             }
             return app;
         };
@@ -281,9 +282,11 @@ export function createOpenAPI(options: OpenAPIOptions): OpenAPIService {
             if (metadata) {
                 registerRoute("post", path, metadata);
             }
-            const firstHandler = handlers.find((h) => typeof h === "function") as Handler | undefined;
-            if (firstHandler) {
-                originalPost(path, firstHandler);
+            const callables = handlers.filter((h) => typeof h === "function") as Array<
+                import("../core/types").Middleware | Handler
+            >;
+            if (callables.length > 0) {
+                originalPost(path, ...callables);
             }
             return app;
         };
@@ -293,9 +296,11 @@ export function createOpenAPI(options: OpenAPIOptions): OpenAPIService {
             if (metadata) {
                 registerRoute("put", path, metadata);
             }
-            const firstHandler = handlers.find((h) => typeof h === "function") as Handler | undefined;
-            if (firstHandler) {
-                originalPut(path, firstHandler);
+            const callables = handlers.filter((h) => typeof h === "function") as Array<
+                import("../core/types").Middleware | Handler
+            >;
+            if (callables.length > 0) {
+                originalPut(path, ...callables);
             }
             return app;
         };
@@ -305,9 +310,11 @@ export function createOpenAPI(options: OpenAPIOptions): OpenAPIService {
             if (metadata) {
                 registerRoute("delete", path, metadata);
             }
-            const firstHandler = handlers.find((h) => typeof h === "function") as Handler | undefined;
-            if (firstHandler) {
-                originalDelete(path, firstHandler);
+            const callables = handlers.filter((h) => typeof h === "function") as Array<
+                import("../core/types").Middleware | Handler
+            >;
+            if (callables.length > 0) {
+                originalDelete(path, ...callables);
             }
             return app;
         };
@@ -317,9 +324,11 @@ export function createOpenAPI(options: OpenAPIOptions): OpenAPIService {
             if (metadata) {
                 registerRoute("patch", path, metadata);
             }
-            const firstHandler = handlers.find((h) => typeof h === "function") as Handler | undefined;
-            if (firstHandler) {
-                originalPatch(path, firstHandler);
+            const callables = handlers.filter((h) => typeof h === "function") as Array<
+                import("../core/types").Middleware | Handler
+            >;
+            if (callables.length > 0) {
+                originalPatch(path, ...callables);
             }
             return app;
         };

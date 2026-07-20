@@ -130,6 +130,7 @@ const providerConfigs: Record<OAuthProvider, ProviderConfig> = {
         supportsRefresh: true,
     },
 };
+let warnedAboutMissingExpectedState = false;
 
 /**
  * Generate PKCE code verifier (random string)
@@ -179,8 +180,9 @@ function base64URLEncode(buffer: Uint8Array): string {
  *   const state = crypto.randomUUID(); // Store this in session/cookie for CSRF protection
  *   await ctx.env.SESSION.put(state, 'valid', { expirationTtl: 600 });
  *
- *   const authUrl = googleOAuth.getAuthUrl(state);
- *   return redirectResponse(authUrl);
+ *   const { url, codeVerifier } = await googleOAuth.getAuthUrl(state);
+ *   // Store codeVerifier alongside state in the user's session/cookie.
+ *   return redirectResponse(url);
  * });
  *
  * // Step 2: Handle callback
@@ -195,7 +197,8 @@ function base64URLEncode(buffer: Uint8Array): string {
  *   await ctx.env.SESSION.delete(state);
  *
  *   try {
- *     const result = await googleOAuth.handleCallback(code, state);
+ *     const codeVerifier = await ctx.env.SESSION.get(`pkce:${state}`);
+ *     const result = await googleOAuth.handleCallback(code, codeVerifier, state, state);
  *     // result.user: { id, email, name, avatar }
  *     // result.accessToken, result.refreshToken, result.expiresIn
  *
@@ -259,6 +262,9 @@ export function createOAuth(options: OAuthOptions) {
             if (!state || state !== expectedState) {
                 throw new Error("OAuth state mismatch — possible CSRF attack");
             }
+        } else if (!warnedAboutMissingExpectedState) {
+            warnedAboutMissingExpectedState = true;
+            console.warn("OAuth handleCallback called without expectedState; validate state to prevent CSRF attacks.");
         }
 
         // Exchange code for token with PKCE

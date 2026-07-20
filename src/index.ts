@@ -23,7 +23,7 @@
  */
 
 // Core
-export { createApp } from "./core/app";
+export { createApp, parseQueryString } from "./core/app";
 export { jsonResponse, errorResponse, successResponse, redirectResponse } from "./core/response";
 export { corsMiddleware, jsonMiddleware, securityHeadersMiddleware } from "./core/middleware";
 export type { Middleware, RequestContext, AppOptions, Handler } from "./core/types";
@@ -35,7 +35,7 @@ export type { AuthOptions, User, Session, AuthResult, AuthService, RequireAuthOp
 
 // Database
 export { createDatabase } from "./database/index";
-export type { D1Database, D1Result, DatabaseOptions, DatabaseService } from "./database/index";
+export type { D1Database, D1Result, DatabaseOptions, DatabaseService, WhereOperator, WhereCondition, WhereClause } from "./database/index";
 
 // Cache
 export { createCache } from "./cache/index";
@@ -43,6 +43,16 @@ export type { CacheOptions, CacheService, CacheEntry } from "./cache/index";
 
 // Storage
 export { createStorage, verifySignedUploadToken } from "./storage/index";
+export {
+    FileTooLargeError,
+    InvalidMimeTypeError,
+    UploadFailedError,
+    DownloadFailedError,
+    DeleteFailedError,
+    FileNotFoundError,
+    MultipartUploadError,
+    SignedUrlError,
+} from "./storage/index";
 export type { StorageOptions, StorageService, UploadResult, DownloadResult, SignedUploadPayload } from "./storage/index";
 
 // Queue
@@ -90,7 +100,7 @@ export { v, createValidator } from "./validation/index";
 export type { Schema, ValidationResult, ValidationErrorDetail, ValidatorConfig, InferSchema, ValidatedContext } from "./validation/index";
 
 // WebSocket (Feature 4)
-export { createWebSocketHandler, createDurableWebSocket } from "./websocket/index";
+export { createWebSocketHandler, createDurableWebSocket, asHandler } from "./websocket/index";
 export type {
     WebSocketContext,
     WebSocketHandlerOptions,

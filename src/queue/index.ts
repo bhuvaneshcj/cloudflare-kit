@@ -23,7 +23,12 @@ export interface SendResult {
 }
 
 export interface QueueHandler<T = unknown> {
-    (message: T): Promise<void> | void;
+    (message: QueueMessage<T>): Promise<void> | void;
+}
+
+export interface QueueBatchMessage<T = unknown> {
+    body: T;
+    delaySeconds?: number;
 }
 
 /**
@@ -64,12 +69,22 @@ export function createQueue<T = unknown>(options: QueueOptions) {
             }
         },
 
+        /** Send a message and throw when the queue binding rejects it. */
+        async sendOrThrow(body: T, options?: { delaySeconds?: number }): Promise<void> {
+            const result = await this.send(body, options);
+            if (!result.success) {
+                throw new Error(result.error || "Failed to send message");
+            }
+        },
+
         /**
          * Send multiple messages to the queue
          */
-        async sendBatch(messages: T[]): Promise<SendResult> {
+        async sendBatch(messages: Array<T | QueueBatchMessage<T>>): Promise<SendResult> {
             try {
-                const batch = messages.map((body) => ({ body }));
+                const batch = messages.map((message) =>
+                    isQueueBatchMessage<T>(message) ? { body: message.body, delaySeconds: message.delaySeconds } : { body: message },
+                );
                 await queueBinding.sendBatch(batch);
                 return { success: true };
             } catch (error) {
@@ -117,7 +132,12 @@ export function createQueueConsumer<T = unknown>(processor: QueueHandler<T>): (b
     return async (batch: MessageBatch<T>, _env: unknown, _ctx: ExecutionContext) => {
         for (const message of batch.messages) {
             try {
-                await processor(message.body);
+                await processor({
+                    id: message.id,
+                    body: message.body,
+                    timestamp: message.timestamp.getTime(),
+                    attempts: message.attempts,
+                });
                 message.ack();
             } catch (error) {
                 console.error("Failed to process message:", error);
@@ -125,6 +145,10 @@ export function createQueueConsumer<T = unknown>(processor: QueueHandler<T>): (b
             }
         }
     };
+}
+
+function isQueueBatchMessage<T>(message: T | QueueBatchMessage<T>): message is QueueBatchMessage<T> {
+    return typeof message === "object" && message !== null && "body" in message && ("delaySeconds" in message || Object.keys(message).length <= 2);
 }
 
 export type QueueService<T = unknown> = ReturnType<typeof createQueue<T>>;

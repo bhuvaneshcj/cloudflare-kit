@@ -150,6 +150,7 @@ function normalizeAddress(addr: EmailAddress | EmailAddress[]): Array<{ email: s
  */
 export function createMailer(options: MailerOptions) {
     const MAILCHANNELS_API = "https://api.mailchannels.net/tx/v1/send";
+    let warnedAboutMailChannels = false;
 
     /**
      * Send an email
@@ -170,6 +171,10 @@ export function createMailer(options: MailerOptions) {
         }
 
         // Fall back to MailChannels API (deprecated — prefer Email binding)
+        if (!warnedAboutMailChannels) {
+            warnedAboutMailChannels = true;
+            console.warn("Using the MailChannels fallback path; prefer a Cloudflare Email binding for production delivery.");
+        }
         const requestBody = buildMailChannelsRequest(emailOptions);
 
         const response = await fetch(MAILCHANNELS_API, {
@@ -281,10 +286,7 @@ export function createMailer(options: MailerOptions) {
         const template = templates.get(templateName);
 
         if (!template) {
-            return {
-                success: false,
-                error: `Template not found: ${templateName}`,
-            };
+            throw new Error(`Template not found: ${templateName}`);
         }
 
         // Simple variable interpolation: {{variableName}} (HTML-escaped)

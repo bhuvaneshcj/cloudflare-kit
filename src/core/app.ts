@@ -16,7 +16,7 @@ import type { Plugin, PluginContext } from "../plugins/types";
  */
 export interface RouterContext extends RequestContext {
     params: Record<string, string>;
-    query: Record<string, string>;
+    query: Record<string, string | string[]>;
 }
 
 /**
@@ -49,17 +49,17 @@ export interface Router {
 /**
  * Application instance
  */
-export interface App {
-    use(middleware: Middleware): this;
-    get(path: string, ...handlers: Array<Middleware | Handler>): this;
-    post(path: string, ...handlers: Array<Middleware | Handler>): this;
-    put(path: string, ...handlers: Array<Middleware | Handler>): this;
-    delete(path: string, ...handlers: Array<Middleware | Handler>): this;
-    patch(path: string, ...handlers: Array<Middleware | Handler>): this;
-    head(path: string, ...handlers: Array<Middleware | Handler>): this;
-    options(path: string, ...handlers: Array<Middleware | Handler>): this;
+export interface App<Env extends Record<string, unknown> = Record<string, unknown>> {
+    use(middleware: Middleware<Env>): this;
+    get(path: string, ...handlers: Array<Middleware<Env> | Handler<Env>>): this;
+    post(path: string, ...handlers: Array<Middleware<Env> | Handler<Env>>): this;
+    put(path: string, ...handlers: Array<Middleware<Env> | Handler<Env>>): this;
+    delete(path: string, ...handlers: Array<Middleware<Env> | Handler<Env>>): this;
+    patch(path: string, ...handlers: Array<Middleware<Env> | Handler<Env>>): this;
+    head(path: string, ...handlers: Array<Middleware<Env> | Handler<Env>>): this;
+    options(path: string, ...handlers: Array<Middleware<Env> | Handler<Env>>): this;
     group(prefix: string, callback: (router: Router) => void): this;
-    fetch(request: Request, env: Record<string, unknown>, executionContext: ExecutionContext): Promise<Response>;
+    fetch(request: Request, env: Env, executionContext: ExecutionContext): Promise<Response>;
 }
 
 /**
@@ -97,10 +97,11 @@ export function parseRoutePattern(path: string): { pattern: RegExp; paramNames: 
 /**
  * Parse query string from URL into a record
  */
-function parseQueryString(url: URL): Record<string, string> {
-    const query: Record<string, string> = {};
+export function parseQueryString(url: URL): Record<string, string | string[]> {
+    const query: Record<string, string | string[]> = {};
     for (const [key, value] of url.searchParams) {
-        query[key] = value;
+        const existing = query[key];
+        query[key] = existing === undefined ? value : Array.isArray(existing) ? [...existing, value] : [existing, value];
     }
     return query;
 }
@@ -156,10 +157,13 @@ function splitHandlers(handlers: Array<Middleware | Handler>): { middleware: Mid
 /**
  * Create a new Cloudflare Worker application with dynamic routing
  */
-export function createApp(options: AppOptions = {}): App {
+export function createApp<Env extends Record<string, unknown> = Record<string, unknown>>(
+    options: AppOptions<Env> = {},
+): App<Env> {
     const middlewares: Middleware[] = [];
     const routes: Route[] = [];
     const registry = new PluginRegistry();
+    const providers = new Map<string, unknown>();
     let pluginsInstalled = false;
 
     // Register plugins from options
@@ -184,13 +188,15 @@ export function createApp(options: AppOptions = {}): App {
 
         const pluginApp = {
             name: "cloudflare-kit",
-            version: "2.2.0",
+            version: "3.0.0",
             config: {},
             logger: noopLogger,
             on: registry.on.bind(registry),
             emit: registry.emit.bind(registry),
-            getProvider: <T>(_name: string): T | undefined => undefined,
-            setProvider: <T>(_name: string, _provider: T): void => undefined,
+            getProvider: <T>(name: string): T | undefined => providers.get(name) as T | undefined,
+            setProvider: <T>(name: string, provider: T): void => {
+                providers.set(name, provider);
+            },
         };
 
         const context: PluginContext = {
@@ -313,7 +319,7 @@ export function createApp(options: AppOptions = {}): App {
         return null;
     }
 
-    const app: App = {
+    const app = {
         use(middleware: Middleware) {
             middlewares.push(middleware);
             void registry.emit("middleware:register", middleware.name || "anonymous");
@@ -366,7 +372,18 @@ export function createApp(options: AppOptions = {}): App {
 
             const url = new URL(request.url);
             const method = request.method;
-            const pathname = url.pathname;
+            let pathname = url.pathname;
+
+            if (options.trailingSlash === "ignore" && pathname.length > 1 && pathname.endsWith("/")) {
+                pathname = pathname.slice(0, -1);
+            } else if (options.trailingSlash === "redirect" && pathname.length > 1 && pathname.endsWith("/")) {
+                const redirectUrl = new URL(url);
+                redirectUrl.pathname = pathname.slice(0, -1);
+                return new Response(null, {
+                    status: 308,
+                    headers: { Location: redirectUrl.toString() },
+                });
+            }
 
             const match = findRoute(method, pathname);
 
@@ -437,7 +454,7 @@ export function createApp(options: AppOptions = {}): App {
                 await registry.emit("request:error", context, error instanceof Error ? error : new Error(String(error)));
 
                 if (options.onError) {
-                    const custom = await options.onError(error, context);
+                    const custom = await options.onError(error, context as RequestContext<Env>);
                     return applyResponseHeaders(custom, context);
                 }
 
@@ -446,7 +463,7 @@ export function createApp(options: AppOptions = {}): App {
         },
     };
 
-    return app;
+    return app as App<Env>;
 }
 
 export type { Middleware, RequestContext, AppOptions, Handler } from "./types";

@@ -99,6 +99,7 @@ export function rateLimit(options: RateLimitOptions): Middleware {
 
 /**
  * Create request validation middleware
+ * @deprecated Use createValidator from "../validation" for composable schemas.
  */
 export function validateRequest(schema: ValidationSchema): Middleware {
     return async (context: RequestContext): Promise<Response | void> => {

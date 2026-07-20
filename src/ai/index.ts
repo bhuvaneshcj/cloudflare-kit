@@ -20,6 +20,8 @@ export interface AiRunOptions {
     stream?: boolean;
     /** Gateway cache key */
     cacheKey?: string;
+    /** AI Gateway to route this invocation through. */
+    gateway?: { id: string };
 }
 
 /**
@@ -129,8 +131,7 @@ export function createAI(options: AIOptions): AIService {
 
     /**
      * Run any model with custom inputs.
-     * Always passes the model id to binding.run(); gateway is metadata only
-     * (Workers AI Gateway is configured on the binding / wrangler, not via URL).
+     * Passes the configured AI Gateway using the Workers AI run options.
      */
     async function run<T>(model: string, inputs: unknown, runOptions?: AiRunOptions): Promise<T> {
         const mergedOptions: AiRunOptions = {
@@ -139,6 +140,9 @@ export function createAI(options: AIOptions): AIService {
 
         if (gateway?.cacheKey) {
             mergedOptions.cacheKey = gateway?.cacheKey ?? `${gateway.id}:${model}`;
+        }
+        if (gateway) {
+            mergedOptions.gateway = { id: gateway.id };
         }
 
         return await binding.run<T>(model, inputs, mergedOptions);
@@ -199,7 +203,8 @@ export function createAI(options: AIOptions): AIService {
      */
     async function imageToText(imageData: ArrayBuffer, model = "@cf/unum/uform-gen2-qwen-500m"): Promise<string> {
         const inputs = {
-            image: [...new Uint8Array(imageData)],
+            // Keep binary data as a Uint8Array to avoid duplicating large images.
+            image: new Uint8Array(imageData),
         };
 
         const result = await run<ImageToTextResponse>(model, inputs);

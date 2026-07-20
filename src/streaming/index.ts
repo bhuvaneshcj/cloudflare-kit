@@ -23,9 +23,11 @@ export interface SSEEvent {
  */
 export interface SSEHelper {
     /** Send an SSE event */
-    send(event: SSEEvent): void;
+    send(event: SSEEvent): Promise<void>;
+    /** Send a comment ping to keep intermediary connections alive. */
+    ping(): Promise<void>;
     /** Close the SSE connection */
-    close(): void;
+    close(): Promise<void>;
     /** Get the Response object */
     response: Response;
 }
@@ -35,13 +37,13 @@ export interface SSEHelper {
  */
 export interface StreamWriter {
     /** Write a text chunk */
-    write(chunk: string): void;
+    write(chunk: string): Promise<void>;
     /** Write JSON data */
-    writeJSON(data: unknown): void;
+    writeJSON(data: unknown): Promise<void>;
     /** Close the stream */
-    close(): void;
+    close(): Promise<void>;
     /** Write an error message */
-    error(msg: string): void;
+    error(msg: string): Promise<void>;
 }
 
 /**
@@ -110,7 +112,7 @@ export function createSSE(): SSEHelper {
     /**
      * Send an SSE event
      */
-    function send(event: SSEEvent): void {
+    async function send(event: SSEEvent): Promise<void> {
         if (isClosed) return;
 
         let message = "";
@@ -140,20 +142,38 @@ export function createSSE(): SSEHelper {
         // End of event
         message += "\n";
 
-        writer.write(encoder.encode(message)).catch((err) => {
-            console.error("SSE write error:", err);
-        });
+        try {
+            await writer.write(encoder.encode(message));
+        } catch (error) {
+            isClosed = true;
+            throw error;
+        }
+    }
+
+    // SSE comments are ignored by clients and can be used as keepalive pings.
+    async function ping(): Promise<void> {
+        if (isClosed) return;
+        try {
+            await writer.write(encoder.encode(": ping\n\n"));
+        } catch (error) {
+            isClosed = true;
+            throw error;
+        }
     }
 
     /**
      * Close the SSE connection
      */
-    function close(): void {
+    async function close(): Promise<void> {
         if (isClosed) return;
         isClosed = true;
-        writer.close().catch((err) => {
-            console.error("SSE close error:", err);
-        });
+        try {
+            await writer.close();
+        } catch (error) {
+            // A canceled client stream rejects writer.close(); it is already closed.
+            if (error instanceof TypeError) return;
+            throw error;
+        }
     }
 
     // Create the response
@@ -163,6 +183,7 @@ export function createSSE(): SSEHelper {
 
     return {
         send,
+        ping,
         close,
         response,
     };
@@ -247,43 +268,44 @@ export function createStreamResponse(fn: (writer: StreamWriter) => Promise<void>
     let isClosed = false;
 
     const streamWriter: StreamWriter = {
-        write(chunk: string): void {
+        async write(chunk: string): Promise<void> {
             if (isClosed) return;
-            writer.write(encoder.encode(chunk)).catch((err) => {
-                console.error("Stream write error:", err);
-            });
+            try {
+                await writer.write(encoder.encode(chunk));
+            } catch (error) {
+                isClosed = true;
+                throw error;
+            }
         },
 
-        writeJSON(data: unknown): void {
+        async writeJSON(data: unknown): Promise<void> {
             if (isClosed) return;
             const json = JSON.stringify(data) + "\n";
-            writer.write(encoder.encode(json)).catch((err) => {
-                console.error("Stream write error:", err);
-            });
+            await this.write(json);
         },
 
-        close(): void {
+        async close(): Promise<void> {
             if (isClosed) return;
             isClosed = true;
-            writer.close().catch((err) => {
-                console.error("Stream close error:", err);
-            });
+            try {
+                await writer.close();
+            } catch (error) {
+                if (error instanceof TypeError) return;
+                throw error;
+            }
         },
 
-        error(msg: string): void {
+        async error(msg: string): Promise<void> {
             if (isClosed) return;
             const errorObj = { error: msg, timestamp: new Date().toISOString() };
-            writer.write(encoder.encode(JSON.stringify(errorObj) + "\n")).catch((err) => {
-                console.error("Stream error write:", err);
-            });
+            await this.write(JSON.stringify(errorObj) + "\n");
         },
     };
 
     // Execute the handler
     fn(streamWriter).catch((error) => {
         console.error("Stream handler error:", error);
-        streamWriter.error(error instanceof Error ? error.message : "Unknown error");
-        streamWriter.close();
+        void streamWriter.error(error instanceof Error ? error.message : "Unknown error").finally(() => streamWriter.close());
     });
 
     return new Response(stream.readable, {

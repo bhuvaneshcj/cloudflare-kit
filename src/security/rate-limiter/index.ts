@@ -164,7 +164,12 @@ export function createRateLimiter(config: RateLimiterConfig): RateLimiter {
 export function createRateLimitMiddleware(limiter: RateLimiter): import("../../core/types").Middleware {
     return async (context) => {
         try {
-            await limiter.consume(context.request);
+            const result = await limiter.consume(context.request);
+            context.state.rateLimitHeaders = {
+                "X-RateLimit-Limit": String(result.limit),
+                "X-RateLimit-Remaining": String(result.remaining),
+                "X-RateLimit-Reset": String(Math.floor(result.resetTime / 1000)),
+            };
             return undefined;
         } catch (error) {
             if (error instanceof RateLimitError) {

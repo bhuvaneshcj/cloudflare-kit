@@ -9,6 +9,13 @@ import { DatabaseError } from "../errors/index";
 
 export type { D1Database, D1Result, DatabaseOptions };
 
+export type WhereOperator = "eq" | "neq" | "in" | "isNull";
+export interface WhereCondition {
+    op: WhereOperator;
+    value?: unknown;
+}
+export type WhereClause = Record<string, unknown | WhereCondition>;
+
 /**
  * Validates SQL identifiers (table names, column names)
  * Only allows alphanumeric characters and underscores, starting with a letter or underscore
@@ -22,9 +29,9 @@ function validateIdentifier(name: string): string {
 }
 
 /**
- * Build a parameterized WHERE clause from a structured record (AND equality only)
+ * Build a parameterized WHERE clause from structured AND conditions.
  */
-function buildWhereClause(where: Record<string, unknown>): { clause: string; params: unknown[] } {
+function buildWhereClause(where: WhereClause): { clause: string; params: unknown[] } {
     const keys = Object.keys(where);
     if (keys.length === 0) {
         throw new DatabaseError("WHERE clause requires at least one condition");
@@ -35,11 +42,41 @@ function buildWhereClause(where: Record<string, unknown>): { clause: string; par
 
     for (const key of keys) {
         validateIdentifier(key);
-        parts.push(`${key} = ?`);
-        params.push(where[key]);
+        const condition = where[key];
+        if (!isWhereCondition(condition)) {
+            parts.push(`${key} = ?`);
+            params.push(condition);
+            continue;
+        }
+
+        switch (condition.op) {
+            case "eq":
+                parts.push(`${key} = ?`);
+                params.push(condition.value);
+                break;
+            case "neq":
+                parts.push(`${key} != ?`);
+                params.push(condition.value);
+                break;
+            case "in": {
+                if (!Array.isArray(condition.value) || condition.value.length === 0) {
+                    throw new DatabaseError(`IN condition for ${key} requires a non-empty array`);
+                }
+                parts.push(`${key} IN (${condition.value.map(() => "?").join(", ")})`);
+                params.push(...condition.value);
+                break;
+            }
+            case "isNull":
+                parts.push(`${key} IS NULL`);
+                break;
+        }
     }
 
     return { clause: parts.join(" AND "), params };
+}
+
+function isWhereCondition(value: unknown): value is WhereCondition {
+    return typeof value === "object" && value !== null && "op" in value;
 }
 
 export interface DatabaseService {
@@ -47,8 +84,8 @@ export interface DatabaseService {
     get<T = unknown>(sql: string, params?: unknown[]): Promise<T | null>;
     execute(sql: string, params?: unknown[]): Promise<D1Result>;
     insert(table: string, data: Record<string, unknown>): Promise<string | number | null>;
-    update(table: string, data: Record<string, unknown>, where: Record<string, unknown>): Promise<number>;
-    delete(table: string, where: Record<string, unknown>): Promise<number>;
+    update(table: string, data: Record<string, unknown>, where: WhereClause): Promise<number>;
+    delete(table: string, where: WhereClause): Promise<number>;
     batch<T = unknown>(queries: { sql: string; params: unknown[] }[]): Promise<D1Result<T>[]>;
     getBinding(): D1Database;
 }
@@ -101,7 +138,7 @@ export function createDatabase(options: DatabaseOptions): DatabaseService {
             return result.meta?.last_row_id ?? null;
         },
 
-        async update(table: string, data: Record<string, unknown>, where: Record<string, unknown>): Promise<number> {
+        async update(table: string, data: Record<string, unknown>, where: WhereClause): Promise<number> {
             validateIdentifier(table);
 
             const keys = Object.keys(data);
@@ -116,7 +153,7 @@ export function createDatabase(options: DatabaseOptions): DatabaseService {
             return result.meta?.changes ?? 0;
         },
 
-        async delete(table: string, where: Record<string, unknown>): Promise<number> {
+        async delete(table: string, where: WhereClause): Promise<number> {
             validateIdentifier(table);
 
             const { clause, params: whereParams } = buildWhereClause(where);

@@ -69,6 +69,22 @@ export function createPlugin(
  * Compose multiple plugins into one
  */
 export function composePlugins(name: string, version: string, ...plugins: import("./types").Plugin[]): import("./types").Plugin {
+    const hooks = {} as NonNullable<import("./types").Plugin["hooks"]>;
+    const hookNames = new Set<keyof import("./types").PluginHooks>();
+    for (const plugin of plugins) {
+        for (const hookName of Object.keys(plugin.hooks ?? {}) as Array<keyof import("./types").PluginHooks>) {
+            hookNames.add(hookName);
+        }
+    }
+    for (const hookName of hookNames) {
+        const handlers = plugins.map((plugin) => plugin.hooks?.[hookName]).filter(Boolean) as Array<(...args: unknown[]) => void | Promise<void>>;
+        (hooks as Record<string, unknown>)[hookName] = async (...args: unknown[]) => {
+            for (const handler of handlers) {
+                await handler(...args);
+            }
+        };
+    }
+
     return definePlugin({
         name,
         version,
@@ -78,5 +94,6 @@ export function composePlugins(name: string, version: string, ...plugins: import
                 await plugin.install(context);
             }
         },
+        hooks,
     });
 }

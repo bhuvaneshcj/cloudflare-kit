@@ -13,6 +13,6 @@ export default defineConfig({
     platform: "neutral",
     target: "es2022",
     banner: {
-        js: "/*! Cloudflare Kit v2.2.0 | MIT License | github.com/bhuvaneshcj/cloudflare-kit */",
+        js: "/*! Cloudflare Kit v3.0.0 | MIT License | github.com/bhuvaneshcj/cloudflare-kit */",
     },
 });

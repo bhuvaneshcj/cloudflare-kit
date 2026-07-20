@@ -6,6 +6,7 @@
  */
 
 import type { KVNamespace } from "@cloudflare/workers-types";
+import { CacheError } from "../errors/index";
 
 export interface CacheOptions {
     binding: KVNamespace;
@@ -88,8 +89,8 @@ export function createCache(options: CacheOptions) {
         try {
             const value = await kv.get(key, "json");
             return value as T | null;
-        } catch {
-            return null;
+        } catch (error) {
+            throw new CacheError(`Cache get failed: ${error instanceof Error ? error.message : "Unknown error"}`, key);
         }
     }
 
@@ -99,8 +100,8 @@ export function createCache(options: CacheOptions) {
     async function getString(key: string): Promise<string | null> {
         try {
             return await kv.get(key, "text");
-        } catch {
-            return null;
+        } catch (error) {
+            throw new CacheError(`Cache get failed: ${error instanceof Error ? error.message : "Unknown error"}`, key);
         }
     }
 
@@ -117,7 +118,7 @@ export function createCache(options: CacheOptions) {
                 await kv.put(key, JSON.stringify(value));
             }
         } catch (error) {
-            console.error("Cache set error:", error);
+            throw new CacheError(`Cache set failed: ${error instanceof Error ? error.message : "Unknown error"}`, key);
         }
     }
 
@@ -134,7 +135,7 @@ export function createCache(options: CacheOptions) {
                 await kv.put(key, value);
             }
         } catch (error) {
-            console.error("Cache set error:", error);
+            throw new CacheError(`Cache set failed: ${error instanceof Error ? error.message : "Unknown error"}`, key);
         }
     }
 
@@ -145,7 +146,7 @@ export function createCache(options: CacheOptions) {
         try {
             await kv.delete(key);
         } catch (error) {
-            console.error("Cache delete error:", error);
+            throw new CacheError(`Cache delete failed: ${error instanceof Error ? error.message : "Unknown error"}`, key);
         }
     }
 
@@ -218,7 +219,9 @@ export function createCache(options: CacheOptions) {
     }
 
     /**
-     * Save a value to cache with associated tags for invalidation
+     * Save a value to cache with associated tags for invalidation.
+     * Deleting a key directly does not scan tag indexes; stale entries are cleared
+     * when their tag is invalidated.
      */
     async function setWithTags(key: string, value: unknown, tags: string[], ttlSeconds?: number): Promise<void> {
         const ttl = ttlSeconds ?? defaultTTL;
@@ -250,7 +253,7 @@ export function createCache(options: CacheOptions) {
 
             await Promise.all([valuePromise, ...tagPromises]);
         } catch (error) {
-            console.error("Cache setWithTags error:", error);
+            throw new CacheError(`Cache setWithTags failed: ${error instanceof Error ? error.message : "Unknown error"}`, key);
         }
     }
 
@@ -276,7 +279,7 @@ export function createCache(options: CacheOptions) {
             // Clear the tag index
             await kv.delete(tagKey);
         } catch (error) {
-            console.error("Cache invalidateByTag error:", error);
+            throw new CacheError(`Cache invalidation failed: ${error instanceof Error ? error.message : "Unknown error"}`, tag);
         }
     }
 

@@ -4,6 +4,27 @@
  * Simple utilities for creating common HTTP responses.
  */
 
+export type ResponseHeaders = HeadersInit | Record<string, string>;
+
+function mergeHeaders(base: Record<string, string>, extra?: ResponseHeaders): Headers {
+    const headers = new Headers(base);
+    if (!extra) return headers;
+    if (extra instanceof Headers) {
+        extra.forEach((value, key) => headers.set(key, value));
+        return headers;
+    }
+    if (Array.isArray(extra)) {
+        for (const [key, value] of extra) {
+            headers.set(key, value);
+        }
+        return headers;
+    }
+    for (const [key, value] of Object.entries(extra)) {
+        headers.set(key, value);
+    }
+    return headers;
+}
+
 /**
  * Create a JSON response
  *
@@ -11,14 +32,13 @@
  * ```typescript
  * return jsonResponse({ users: [] });
  * return jsonResponse({ user }, 201);
+ * return jsonResponse({ user }, 201, { "X-Request-Id": "abc" });
  * ```
  */
-export function jsonResponse(data: unknown, status: number = 200): Response {
+export function jsonResponse(data: unknown, status: number = 200, headers?: ResponseHeaders): Response {
     return new Response(JSON.stringify(data), {
         status,
-        headers: {
-            "Content-Type": "application/json",
-        },
+        headers: mergeHeaders({ "Content-Type": "application/json" }, headers),
     });
 }
 
@@ -28,11 +48,20 @@ export function jsonResponse(data: unknown, status: number = 200): Response {
  * @example
  * ```typescript
  * return errorResponse('User not found', 404);
- * return errorResponse('Invalid input', 400);
+ * return errorResponse('Invalid input', 400, { details: [{ field: 'email', message: 'required' }] });
  * ```
  */
-export function errorResponse(message: string, status: number = 500): Response {
-    return jsonResponse({ error: message }, status);
+export function errorResponse(
+    message: string,
+    status: number = 500,
+    details?: unknown,
+    headers?: ResponseHeaders,
+): Response {
+    const body: Record<string, unknown> = { error: message };
+    if (details !== undefined) {
+        body.details = details;
+    }
+    return jsonResponse(body, status, headers);
 }
 
 /**
@@ -41,26 +70,26 @@ export function errorResponse(message: string, status: number = 500): Response {
  * @example
  * ```typescript
  * return successResponse('User created');
+ * return successResponse({ id: 1 }, 201);
  * ```
  */
-export function successResponse(message: string, status: number = 200): Response {
-    return jsonResponse({ success: true, message }, status);
+export function successResponse(
+    messageOrData: string | Record<string, unknown>,
+    status: number = 200,
+    headers?: ResponseHeaders,
+): Response {
+    if (typeof messageOrData === "string") {
+        return jsonResponse({ success: true, message: messageOrData }, status, headers);
+    }
+    return jsonResponse({ success: true, ...messageOrData }, status, headers);
 }
 
 /**
  * Create a redirect response
- *
- * @example
- * ```typescript
- * return redirectResponse('/login');
- * return redirectResponse('/dashboard', 301);
- * ```
  */
-export function redirectResponse(location: string, status: number = 302): Response {
+export function redirectResponse(location: string, status: number = 302, headers?: ResponseHeaders): Response {
     return new Response(null, {
         status,
-        headers: {
-            Location: location,
-        },
+        headers: mergeHeaders({ Location: location }, headers),
     });
 }

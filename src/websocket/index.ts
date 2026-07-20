@@ -140,6 +140,15 @@ interface WebSocketErrorEvent {
 // Connection tracking for rate limiting
 const activeConnections = new Map<string, Set<WebSocket>>();
 
+/**
+ * Adapt a WebSocket handler for use directly in a createApp route.
+ */
+export function asHandler(
+    wsHandler: { fetch(request: Request, env: Record<string, unknown>, executionContext: ExecutionContext): Promise<Response> },
+): import("../core/types").Handler {
+    return (context) => wsHandler.fetch(context.request, context.env, context.executionContext);
+}
+
 export function createWebSocketHandler(options: WebSocketHandlerOptions) {
     const maxConnections = options.maxConnections ?? 100;
     const handlerId = crypto.randomUUID();

@@ -101,7 +101,7 @@ Middleware returns `Response` to short-circuit, or `void`/`undefined` to continu
 | -------------------------- | --------------------------------------------------- | -------------------- |
 | **createApp**              | HTTP router with dynamic routes, groups, middleware | Built-in             |
 | **createAuth**             | JWT tokens and session management                   | Built-in             |
-| **createDatabase**         | D1 database wrapper with transactions               | D1                   |
+| **createDatabase**         | D1 wrapper with safe insert/update/delete + batch | D1                   |
 | **createCache**            | KV caching with tags and batch operations           | KV                   |
 | **createStorage**          | R2 file storage with streaming and multipart        | R2                   |
 | **createQueue**            | Message queue producer and consumer                 | Queue                |
@@ -111,7 +111,7 @@ Middleware returns `Response` to short-circuit, or `void`/`undefined` to continu
 | **createWebSocketHandler** | WebSocket server with Durable Object support        | WebSocket            |
 | **createOAuth**            | OAuth 2.0 for Google, GitHub, Discord               | Built-in             |
 | **createScheduler**        | Cron job scheduling                                 | Built-in             |
-| **createMailer**           | Email sending via MailChannels                      | Email                |
+| **createMailer**           | Email via Workers Email binding (MailChannels deprecated fallback) | Email                |
 | **createAnalytics**        | Analytics Engine wrapper                            | Analytics Engine     |
 | **createAI**               | Workers AI for text, embeddings, streaming          | AI                   |
 | **createSSE**              | Server-Sent Events and streaming responses          | Built-in             |
@@ -1413,6 +1413,7 @@ app.get("/api/data", async (ctx) => {
 ## Contributing
 
 Contributions are welcome. Please read [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines.
+By participating, you agree to follow our [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ```bash
 git clone https://github.com/bhuvaneshcj/cloudflare-kit.git

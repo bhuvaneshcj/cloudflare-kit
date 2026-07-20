@@ -1,6 +1,6 @@
 {
     "name": "cloudflare-kit",
-    "version": "2.2.0",
+    "version": "3.0.0",
     "description": "The enterprise-grade toolkit for building Cloudflare Workers with simple, clear APIs",
     "keywords": [
         "cloudflare",
@@ -42,7 +42,7 @@
     "module": "./dist/index.js",
     "types": "./dist/index.d.ts",
     "bin": {
-        "cloudflare-kit": "./cli/index.js"
+        "cloudflare-kit": "./cli/index.cjs"
     },
     "exports": {
         ".": {
@@ -74,7 +74,8 @@
         "LICENSE",
         "CHANGELOG.md",
         "SECURITY.md",
-        "CONTRIBUTING.md"
+        "CONTRIBUTING.md",
+        "CODE_OF_CONDUCT.md"
     ],
     "engines": {
         "node": ">=18.0.0"

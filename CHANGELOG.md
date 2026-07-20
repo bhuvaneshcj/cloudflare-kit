@@ -5,6 +5,43 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.0] - 2026-07-20
+
+Major quality release: deepen existing APIs (no new product modules). Some behaviors are intentionally stricter.
+
+### Breaking
+
+- Package version / CLI scaffold dependency → `3.0.0`
+- CLI entry is `cli/index.cjs` (fixes ESM `"type": "module"` bin breakage)
+- `createValidator` query coercion is **opt-in** (`coerceQuery: true`); query values stay strings by default
+- Cache failures throw `CacheError` instead of failing silently
+- Queue consumer processors receive `QueueMessage<T>` (`id`, `body`, `timestamp`, `attempts`) not bare body
+- Email `send` / `sendTemplate` throw on failure (MailChannels path warns as deprecated)
+- Database `where` still accepts plain equality maps; richer `{ op, value }` conditions supported
+
+### Added / improved
+
+- `createApp<Env>()` typed env; `trailingSlash: "ignore" | "redirect"`
+- Query params: duplicate keys become `string[]`
+- Response helpers: optional headers; `errorResponse` details; `successResponse` data objects
+- CORS: origin arrays/callbacks, `maxAge`, `exposeHeaders`, credential-safe origin reflection
+- `jsonMiddleware({ maxSize })`; skips re-parse when `state.body` set
+- Validation: `regex`, `enum`, `nullable`, `default`
+- Auth: `clockSkewSeconds`; `requireAuth` optional cookie / session mode
+- OpenAPI `attach()` forwards **all** middleware + handlers
+- Rate-limit middleware sets `X-RateLimit-*` on success
+- Queue: `sendOrThrow`, batch delay options, richer consumer metadata
+- WebSocket: `asHandler()` for `app.get('/ws', asHandler(ws))`
+- Plugins: real providers map; `composePlugins` merges hooks
+- Streaming writers awaitable; storage errors re-exported from root
+- Example worker: `examples/worker.ts`
+- Expanded Vitest coverage for 3.0 behaviors
+
+### Fixed
+
+- OpenAPI multi-middleware regression
+- CLI bin under ESM package type
+
 ## [2.2.0] - 2026-07-20
 
 ### Fixed (critical)
