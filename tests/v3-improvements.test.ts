@@ -9,8 +9,18 @@ import { requireAuth, createAuth } from "../src/auth/index";
 
 describe("validation 3.0", () => {
     it("supports regex and enum", () => {
-        expect(v.string().regex(/^[a-z]+$/).parse("abc").success).toBe(true);
-        expect(v.string().regex(/^[a-z]+$/).parse("ABC").success).toBe(false);
+        expect(
+            v
+                .string()
+                .regex(/^[a-z]+$/)
+                .parse("abc").success,
+        ).toBe(true);
+        expect(
+            v
+                .string()
+                .regex(/^[a-z]+$/)
+                .parse("ABC").success,
+        ).toBe(false);
         expect(v.string().enum(["a", "b"]).parse("a").success).toBe(true);
         expect(v.string().enum(["a", "b"]).parse("c").success).toBe(false);
     });
@@ -74,9 +84,7 @@ describe("openapi attach preserves middleware", () => {
         const openapi = createOpenAPI({ info: { title: "t", version: "1" } });
         openapi.attach(app);
 
-        app.get("/secure", defineRoute({ summary: "secure" }), requireAuth(auth), (ctx) =>
-            jsonResponse({ user: ctx.state.user }),
-        );
+        app.get("/secure", defineRoute({ summary: "secure" }), requireAuth(auth), (ctx) => jsonResponse({ user: ctx.state.user }));
 
         const testApp = createTestApp(app);
         const denied = await testApp.get("/secure");

@@ -157,9 +157,7 @@ function splitHandlers(handlers: Array<Middleware | Handler>): { middleware: Mid
 /**
  * Create a new Cloudflare Worker application with dynamic routing
  */
-export function createApp<Env extends Record<string, unknown> = Record<string, unknown>>(
-    options: AppOptions<Env> = {},
-): App<Env> {
+export function createApp<Env extends Record<string, unknown> = Record<string, unknown>>(options: AppOptions<Env> = {}): App<Env> {
     const middlewares: Middleware[] = [];
     const routes: Route[] = [];
     const registry = new PluginRegistry();
@@ -188,7 +186,7 @@ export function createApp<Env extends Record<string, unknown> = Record<string, u
 
         const pluginApp = {
             name: "cloudflare-kit",
-            version: "4.0.0",
+            version: "4.0.1",
             config: {},
             logger: noopLogger,
             on: registry.on.bind(registry),
@@ -386,25 +384,7 @@ export function createApp<Env extends Record<string, unknown> = Record<string, u
             }
 
             const match = findRoute(method, pathname);
-
-            if (!match) {
-                const availableMethods = findPathWithoutMethod(pathname);
-                if (availableMethods.length > 0) {
-                    return new Response(
-                        JSON.stringify({
-                            error: "Method Not Allowed",
-                            allowed: availableMethods,
-                        }),
-                        {
-                            status: 405,
-                            headers: {
-                                "Content-Type": "application/json",
-                                Allow: availableMethods.join(", "),
-                            },
-                        },
-                    );
-                }
-            }
+            const availableMethods = match ? [] : findPathWithoutMethod(pathname);
 
             const query = parseQueryString(url);
 
@@ -429,24 +409,43 @@ export function createApp<Env extends Record<string, unknown> = Record<string, u
                     return response;
                 }
 
-                if (match) {
-                    const routeMiddlewareResult = await executeMiddlewares(match.route.middleware, context);
-                    if (routeMiddlewareResult) {
-                        const response = applyResponseHeaders(routeMiddlewareResult, context);
+                if (!match) {
+                    if (availableMethods.length > 0) {
+                        const methodNotAllowed = new Response(
+                            JSON.stringify({
+                                error: "Method Not Allowed",
+                                allowed: availableMethods,
+                            }),
+                            {
+                                status: 405,
+                                headers: {
+                                    "Content-Type": "application/json",
+                                    Allow: availableMethods.join(", "),
+                                },
+                            },
+                        );
+                        const response = applyResponseHeaders(methodNotAllowed, context);
                         await registry.emit("request:end", context, response);
                         return response;
                     }
 
-                    const response = applyResponseHeaders(await match.route.handler(context), context);
+                    const notFound = new Response(JSON.stringify({ error: "Not Found", path: pathname, method }), {
+                        status: 404,
+                        headers: { "Content-Type": "application/json" },
+                    });
+                    const response = applyResponseHeaders(notFound, context);
                     await registry.emit("request:end", context, response);
                     return response;
                 }
 
-                const notFound = new Response(JSON.stringify({ error: "Not Found", path: pathname, method }), {
-                    status: 404,
-                    headers: { "Content-Type": "application/json" },
-                });
-                const response = applyResponseHeaders(notFound, context);
+                const routeMiddlewareResult = await executeMiddlewares(match.route.middleware, context);
+                if (routeMiddlewareResult) {
+                    const response = applyResponseHeaders(routeMiddlewareResult, context);
+                    await registry.emit("request:end", context, response);
+                    return response;
+                }
+
+                const response = applyResponseHeaders(await match.route.handler(context), context);
                 await registry.emit("request:end", context, response);
                 return response;
             } catch (error) {

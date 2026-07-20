@@ -97,30 +97,30 @@ Middleware returns `Response` to short-circuit, or `void`/`undefined` to continu
 
 ## Features
 
-| Module                     | What it does                                        | Cloudflare Primitive |
-| -------------------------- | --------------------------------------------------- | -------------------- |
-| **createApp**              | HTTP router with dynamic routes, groups, middleware | Built-in             |
-| **createAuth**             | JWT tokens and session management                   | Built-in             |
-| **createDatabase**         | D1 wrapper with safe insert/update/delete + batch | D1                   |
-| **createCache**            | KV caching with tags and batch operations           | KV                   |
-| **createStorage**          | R2 file storage with streaming and multipart        | R2                   |
-| **createQueue**            | Message queue producer and consumer                 | Queue                |
-| **createLogger**           | Structured logging with request IDs                 | Built-in             |
-| **rateLimit**              | Rate limiting with memory or KV backing             | KV (optional)        |
-| **Validation**             | Schema builder and validator middleware             | Built-in             |
-| **createWebSocketHandler** | WebSocket server with Durable Object support        | WebSocket            |
-| **createOAuth**            | OAuth 2.0 for Google, GitHub, Discord               | Built-in             |
-| **createScheduler**        | Cron job scheduling                                 | Built-in             |
+| Module                     | What it does                                                               | Cloudflare Primitive |
+| -------------------------- | -------------------------------------------------------------------------- | -------------------- |
+| **createApp**              | HTTP router with dynamic routes, groups, middleware                        | Built-in             |
+| **createAuth**             | JWT tokens and session management                                          | Built-in             |
+| **createDatabase**         | D1 wrapper with safe insert/update/delete + batch                          | D1                   |
+| **createCache**            | KV caching with tags and batch operations                                  | KV                   |
+| **createStorage**          | R2 file storage with streaming and multipart                               | R2                   |
+| **createQueue**            | Message queue producer and consumer                                        | Queue                |
+| **createLogger**           | Structured logging with request IDs                                        | Built-in             |
+| **rateLimit**              | Rate limiting with memory or KV backing                                    | KV (optional)        |
+| **Validation**             | Schema builder and validator middleware                                    | Built-in             |
+| **createWebSocketHandler** | WebSocket server with Durable Object support                               | WebSocket            |
+| **createOAuth**            | OAuth 2.0 for Google, GitHub, Discord                                      | Built-in             |
+| **createScheduler**        | Cron job scheduling                                                        | Built-in             |
 | **createMailer**           | Email via Cloudflare Email Service (`send_email`; MailChannels deprecated) | Email                |
-| **createAnalytics**        | Analytics Engine wrapper                            | Analytics Engine     |
-| **createAI**               | Workers AI for text, embeddings, streaming          | AI                   |
-| **createSSE**              | Server-Sent Events and streaming responses          | Built-in             |
-| **createOpenAPI**          | Auto-generated OpenAPI spec and Swagger UI          | Built-in             |
-| **Testing**                | Mock bindings and test utilities                    | Built-in             |
-| **Plugins**                | Plugin system with hooks and registry               | Built-in             |
-| **Errors**                 | Typed error classes with HTTP status codes          | Built-in             |
-| **Response Helpers**       | jsonResponse, errorResponse, redirectResponse       | Built-in             |
-| **Middleware**             | CORS, JSON parsing, security headers                | Built-in             |
+| **createAnalytics**        | Analytics Engine wrapper                                                   | Analytics Engine     |
+| **createAI**               | Workers AI for text, embeddings, streaming                                 | AI                   |
+| **createSSE**              | Server-Sent Events and streaming responses                                 | Built-in             |
+| **createOpenAPI**          | Auto-generated OpenAPI spec and Swagger UI                                 | Built-in             |
+| **Testing**                | Mock bindings and test utilities                                           | Built-in             |
+| **Plugins**                | Plugin system with hooks and registry                                      | Built-in             |
+| **Errors**                 | Typed error classes with HTTP status codes                                 | Built-in             |
+| **Response Helpers**       | jsonResponse, errorResponse, redirectResponse                              | Built-in             |
+| **Middleware**             | CORS, JSON parsing, security headers                                       | Built-in             |
 
 ---
 
@@ -663,7 +663,7 @@ Configure the binding (Wrangler 4 / `wrangler.jsonc`):
 
 ```jsonc
 {
-  "send_email": [{ "name": "EMAIL" }]
+    "send_email": [{ "name": "EMAIL" }],
 }
 ```
 
@@ -1298,46 +1298,44 @@ Prefer `wrangler.jsonc` with Wrangler 4. Generate Env types with `npx wrangler t
 
 ```jsonc
 {
-  "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "my-worker",
-  "main": "src/worker.ts",
-  "compatibility_date": "2026-07-20",
-  "compatibility_flags": ["nodejs_compat"],
-  "vars": {
-    "JWT_SECRET": "change-me-to-32-char-secret-in-production",
-    "GOOGLE_CLIENT_ID": "your-google-client-id"
-  },
-  "d1_databases": [
-    {
-      "binding": "DB",
-      "database_name": "my-database",
-      "database_id": "your-database-id"
-    }
-  ],
-  "kv_namespaces": [
-    { "binding": "CACHE", "id": "your-kv-id" },
-    { "binding": "RATE_LIMIT_KV", "id": "your-kv-id-2" }
-  ],
-  "r2_buckets": [{ "binding": "BUCKET", "bucket_name": "my-bucket" }],
-  "queues": {
-    "producers": [{ "binding": "QUEUE", "queue": "my-queue" }],
-    "consumers": [
-      {
-        "queue": "my-queue",
-        "max_batch_size": 10,
-        "max_batch_timeout": 30
-      }
-    ]
-  },
-  "analytics_engine_datasets": [
-    { "binding": "ANALYTICS", "dataset": "api_metrics" }
-  ],
-  "send_email": [{ "name": "EMAIL" }],
-  "ai": { "binding": "AI" },
-  "durable_objects": {
-    "bindings": [{ "name": "CHAT_ROOMS", "class_name": "ChatRoom" }]
-  },
-  "migrations": [{ "tag": "v1", "new_classes": ["ChatRoom"] }]
+    "$schema": "./node_modules/wrangler/config-schema.json",
+    "name": "my-worker",
+    "main": "src/worker.ts",
+    "compatibility_date": "2026-07-20",
+    "compatibility_flags": ["nodejs_compat"],
+    "vars": {
+        "JWT_SECRET": "change-me-to-32-char-secret-in-production",
+        "GOOGLE_CLIENT_ID": "your-google-client-id",
+    },
+    "d1_databases": [
+        {
+            "binding": "DB",
+            "database_name": "my-database",
+            "database_id": "your-database-id",
+        },
+    ],
+    "kv_namespaces": [
+        { "binding": "CACHE", "id": "your-kv-id" },
+        { "binding": "RATE_LIMIT_KV", "id": "your-kv-id-2" },
+    ],
+    "r2_buckets": [{ "binding": "BUCKET", "bucket_name": "my-bucket" }],
+    "queues": {
+        "producers": [{ "binding": "QUEUE", "queue": "my-queue" }],
+        "consumers": [
+            {
+                "queue": "my-queue",
+                "max_batch_size": 10,
+                "max_batch_timeout": 30,
+            },
+        ],
+    },
+    "analytics_engine_datasets": [{ "binding": "ANALYTICS", "dataset": "api_metrics" }],
+    "send_email": [{ "name": "EMAIL" }],
+    "ai": { "binding": "AI" },
+    "durable_objects": {
+        "bindings": [{ "name": "CHAT_ROOMS", "class_name": "ChatRoom" }],
+    },
+    "migrations": [{ "tag": "v1", "new_classes": ["ChatRoom"] }],
 }
 ```
 

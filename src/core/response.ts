@@ -51,12 +51,7 @@ export function jsonResponse(data: unknown, status: number = 200, headers?: Resp
  * return errorResponse('Invalid input', 400, { details: [{ field: 'email', message: 'required' }] });
  * ```
  */
-export function errorResponse(
-    message: string,
-    status: number = 500,
-    details?: unknown,
-    headers?: ResponseHeaders,
-): Response {
+export function errorResponse(message: string, status: number = 500, details?: unknown, headers?: ResponseHeaders): Response {
     const body: Record<string, unknown> = { error: message };
     if (details !== undefined) {
         body.details = details;
@@ -73,11 +68,7 @@ export function errorResponse(
  * return successResponse({ id: 1 }, 201);
  * ```
  */
-export function successResponse(
-    messageOrData: string | Record<string, unknown>,
-    status: number = 200,
-    headers?: ResponseHeaders,
-): Response {
+export function successResponse(messageOrData: string | Record<string, unknown>, status: number = 200, headers?: ResponseHeaders): Response {
     if (typeof messageOrData === "string") {
         return jsonResponse({ success: true, message: messageOrData }, status, headers);
     }

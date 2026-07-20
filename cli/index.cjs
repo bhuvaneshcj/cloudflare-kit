@@ -42,7 +42,7 @@ function createProject(name) {
             "db:migrate": "wrangler d1 migrations apply DB --local",
         },
         dependencies: {
-            "cloudflare-kit": "^4.0.0",
+            "cloudflare-kit": "^4.0.1",
         },
         devDependencies: {
             "@cloudflare/workers-types": "^5.0.0",

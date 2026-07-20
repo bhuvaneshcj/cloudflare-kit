@@ -19,9 +19,7 @@ export type Middleware<Env extends Record<string, unknown> = Record<string, unkn
     context: RequestContext<Env>,
 ) => Promise<Response | void> | Response | void;
 
-export type Handler<Env extends Record<string, unknown> = Record<string, unknown>> = (
-    context: RequestContext<Env>,
-) => Promise<Response> | Response;
+export type Handler<Env extends Record<string, unknown> = Record<string, unknown>> = (context: RequestContext<Env>) => Promise<Response> | Response;
 
 export interface AppOptions<Env extends Record<string, unknown> = Record<string, unknown>> {
     database?: unknown;

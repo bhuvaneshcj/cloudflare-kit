@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.1] - 2026-07-20
+
+### Fixed
+
+- Global middleware (e.g. CORS preflight) now runs **before** 405 Method Not Allowed responses
+- Expanded Vitest suite to cover all major modules (79 tests)
+- Mock R2 objects now expose a readable `body` stream for download tests
+
 ## [4.0.0] - 2026-07-20
 
 Aligned with the latest Cloudflare Workers stack (workers-types **v5**, Wrangler **4**).

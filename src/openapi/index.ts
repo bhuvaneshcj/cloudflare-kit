@@ -268,9 +268,7 @@ export function createOpenAPI(options: OpenAPIOptions): OpenAPIService {
             if (metadata) {
                 registerRoute("get", path, metadata);
             }
-            const callables = handlers.filter((h) => typeof h === "function") as Array<
-                import("../core/types").Middleware | Handler
-            >;
+            const callables = handlers.filter((h) => typeof h === "function") as Array<import("../core/types").Middleware | Handler>;
             if (callables.length > 0) {
                 originalGet(path, ...callables);
             }
@@ -282,9 +280,7 @@ export function createOpenAPI(options: OpenAPIOptions): OpenAPIService {
             if (metadata) {
                 registerRoute("post", path, metadata);
             }
-            const callables = handlers.filter((h) => typeof h === "function") as Array<
-                import("../core/types").Middleware | Handler
-            >;
+            const callables = handlers.filter((h) => typeof h === "function") as Array<import("../core/types").Middleware | Handler>;
             if (callables.length > 0) {
                 originalPost(path, ...callables);
             }
@@ -296,9 +292,7 @@ export function createOpenAPI(options: OpenAPIOptions): OpenAPIService {
             if (metadata) {
                 registerRoute("put", path, metadata);
             }
-            const callables = handlers.filter((h) => typeof h === "function") as Array<
-                import("../core/types").Middleware | Handler
-            >;
+            const callables = handlers.filter((h) => typeof h === "function") as Array<import("../core/types").Middleware | Handler>;
             if (callables.length > 0) {
                 originalPut(path, ...callables);
             }
@@ -310,9 +304,7 @@ export function createOpenAPI(options: OpenAPIOptions): OpenAPIService {
             if (metadata) {
                 registerRoute("delete", path, metadata);
             }
-            const callables = handlers.filter((h) => typeof h === "function") as Array<
-                import("../core/types").Middleware | Handler
-            >;
+            const callables = handlers.filter((h) => typeof h === "function") as Array<import("../core/types").Middleware | Handler>;
             if (callables.length > 0) {
                 originalDelete(path, ...callables);
             }
@@ -324,9 +316,7 @@ export function createOpenAPI(options: OpenAPIOptions): OpenAPIService {
             if (metadata) {
                 registerRoute("patch", path, metadata);
             }
-            const callables = handlers.filter((h) => typeof h === "function") as Array<
-                import("../core/types").Middleware | Handler
-            >;
+            const callables = handlers.filter((h) => typeof h === "function") as Array<import("../core/types").Middleware | Handler>;
             if (callables.length > 0) {
                 originalPatch(path, ...callables);
             }

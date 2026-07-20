@@ -1,6 +1,6 @@
 {
     "name": "cloudflare-kit",
-    "version": "4.0.0",
+    "version": "4.0.1",
     "description": "The enterprise-grade toolkit for building Cloudflare Workers with simple, clear APIs",
     "keywords": [
         "cloudflare",

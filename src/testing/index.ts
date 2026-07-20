@@ -587,16 +587,28 @@ export function createMockR2(): MockR2Bucket {
     };
 
     const createR2Object = (key: string, data: Uint8Array, metadata: Record<string, unknown>): MockR2Object => {
+        const body = new ReadableStream<Uint8Array>({
+            start(controller) {
+                controller.enqueue(data);
+                controller.close();
+            },
+        });
+
         return {
             key,
             size: data.byteLength,
             etag: crypto.randomUUID(),
             httpEtag: `"${crypto.randomUUID()}"`,
-            httpMetadata: (metadata.httpMetadata as Record<string, string>) || {},
+            httpMetadata: {
+                contentType:
+                    (metadata.httpMetadata as Record<string, string> | undefined)?.contentType ?? (metadata as { contentType?: string }).contentType ?? "",
+                ...((metadata.httpMetadata as Record<string, string>) || {}),
+            },
             customMetadata: (metadata.customMetadata as Record<string, string>) || {},
             checksums: {},
             uploaded: new Date(),
             version: crypto.randomUUID(),
+            body,
             bodyUsed: false,
             async arrayBuffer() {
                 return data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer;

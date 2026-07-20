@@ -5,11 +5,7 @@
  * message builder. MailChannels HTTP fallback is deprecated.
  */
 
-import type {
-    EmailAddress as CfEmailAddress,
-    EmailMessageBuilder,
-    SendEmail,
-} from "@cloudflare/workers-types";
+import type { EmailAddress as CfEmailAddress, EmailMessageBuilder, SendEmail } from "@cloudflare/workers-types";
 
 export type { SendEmail, EmailMessageBuilder, EmailSendResult } from "@cloudflare/workers-types";
 
@@ -67,9 +63,7 @@ function toCfAddress(addr: string | EmailAddress): string | CfEmailAddress {
     return { email: addr.email, name: addr.name ?? "" };
 }
 
-function toCfRecipients(
-    addr: EmailAddress | EmailAddress[] | undefined,
-): string | CfEmailAddress | Array<string | CfEmailAddress> | undefined {
+function toCfRecipients(addr: EmailAddress | EmailAddress[] | undefined): string | CfEmailAddress | Array<string | CfEmailAddress> | undefined {
     if (!addr) return undefined;
     if (Array.isArray(addr)) {
         return addr.map((a) => (a.name ? { email: a.email, name: a.name } : a.email));
@@ -144,9 +138,7 @@ export function createMailer(options: MailerOptions) {
 
         if (!warnedAboutMailChannels) {
             warnedAboutMailChannels = true;
-            console.warn(
-                "[cloudflare-kit] MailChannels fallback is deprecated. Use a Cloudflare Email Service send_email binding.",
-            );
+            console.warn("[cloudflare-kit] MailChannels fallback is deprecated. Use a Cloudflare Email Service send_email binding.");
         }
 
         const response = await fetch(MAILCHANNELS_API, {
@@ -168,20 +160,10 @@ export function createMailer(options: MailerOptions) {
     }
 
     function escapeHtml(value: string): string {
-        return value
-            .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;")
-            .replace(/"/g, "&quot;")
-            .replace(/'/g, "&#39;");
+        return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
     }
 
-    async function sendTemplate(
-        templateName: string,
-        data: Record<string, unknown>,
-        to: EmailAddress,
-        subject?: string,
-    ): Promise<EmailResult> {
+    async function sendTemplate(templateName: string, data: Record<string, unknown>, to: EmailAddress, subject?: string): Promise<EmailResult> {
         const template = templates.get(templateName);
         if (!template) throw new Error(`Template not found: ${templateName}`);
 

@@ -129,9 +129,9 @@ const activeConnections = new Map<string, Set<WebSocket>>();
 /**
  * Adapt a WebSocket handler for use directly in a createApp route.
  */
-export function asHandler(
-    wsHandler: { fetch(request: Request, env: Record<string, unknown>, executionContext: ExecutionContext): Promise<Response> },
-): import("../core/types").Handler {
+export function asHandler(wsHandler: {
+    fetch(request: Request, env: Record<string, unknown>, executionContext: ExecutionContext): Promise<Response>;
+}): import("../core/types").Handler {
     return (context) => wsHandler.fetch(context.request, context.env, context.executionContext);
 }
 

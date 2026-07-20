@@ -60,9 +60,7 @@ export function corsMiddleware(options: CorsMiddlewareOptions = {}): Middleware 
     const maxAge = options.maxAge;
 
     if (credentials && options.origin === "*") {
-        console.warn(
-            "[cloudflare-kit] corsMiddleware: credentials:true with origin:'*' will reflect request Origin",
-        );
+        console.warn("[cloudflare-kit] corsMiddleware: credentials:true with origin:'*' will reflect request Origin");
     }
 
     return async (context: RequestContext): Promise<Response | void> => {
@@ -172,8 +170,7 @@ export function securityHeadersMiddleware(options: SecurityHeadersOptions = {}):
     }
 
     if (options.hsts !== false) {
-        headers["Strict-Transport-Security"] =
-            typeof options.hsts === "string" ? options.hsts : "max-age=31536000; includeSubDomains";
+        headers["Strict-Transport-Security"] = typeof options.hsts === "string" ? options.hsts : "max-age=31536000; includeSubDomains";
     }
 
     return async (context: RequestContext): Promise<Response | void> => {
