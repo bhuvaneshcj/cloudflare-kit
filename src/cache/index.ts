@@ -225,9 +225,7 @@ export function createCache(options: CacheOptions) {
 
         try {
             // Store the value
-            const valuePromise = ttl
-                ? kv.put(key, JSON.stringify(value), { expirationTtl: ttl })
-                : kv.put(key, JSON.stringify(value));
+            const valuePromise = ttl ? kv.put(key, JSON.stringify(value), { expirationTtl: ttl }) : kv.put(key, JSON.stringify(value));
 
             // Update tag indexes
             const tagPromises = tags.map(async (tag) => {

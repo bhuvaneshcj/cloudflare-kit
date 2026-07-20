@@ -31,9 +31,7 @@ export function corsMiddleware(
 
     // Spec-invalid: credentials cannot be used with wildcard origin
     if (credentials && origin === "*") {
-        console.warn(
-            "[cloudflare-kit] corsMiddleware: credentials:true with origin:'*' is invalid; disabling credentials",
-        );
+        console.warn("[cloudflare-kit] corsMiddleware: credentials:true with origin:'*' is invalid; disabling credentials");
         credentials = false;
     }
 
@@ -112,8 +110,7 @@ export function securityHeadersMiddleware(
     };
 
     if (options.hsts !== false) {
-        headers["Strict-Transport-Security"] =
-            typeof options.hsts === "string" ? options.hsts : "max-age=31536000; includeSubDomains";
+        headers["Strict-Transport-Security"] = typeof options.hsts === "string" ? options.hsts : "max-age=31536000; includeSubDomains";
     }
 
     return async (context: RequestContext): Promise<Response | void> => {

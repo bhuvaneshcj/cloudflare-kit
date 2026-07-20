@@ -55,11 +55,7 @@ export async function parseFileMetadata(request: Request, key?: string): Promise
  */
 export function validateFileSize(size: number, maxSize: number): void {
     if (size > maxSize) {
-        throw new FileTooLargeError(
-            `File size ${formatBytes(size)} exceeds maximum ${formatBytes(maxSize)}`,
-            maxSize,
-            size,
-        );
+        throw new FileTooLargeError(`File size ${formatBytes(size)} exceeds maximum ${formatBytes(maxSize)}`, maxSize, size);
     }
 }
 
@@ -197,11 +193,7 @@ export function calculatePartSize(
 
     // Ensure part size doesn't exceed maximum
     if (partSize > maxPartSize) {
-        throw new StorageValidationError(
-            "size",
-            totalSize,
-            `File too large. Maximum supported size is ${formatBytes(maxPartSize * maxParts)}`,
-        );
+        throw new StorageValidationError("size", totalSize, `File too large. Maximum supported size is ${formatBytes(maxPartSize * maxParts)}`);
     }
 
     return { partSize, partCount };

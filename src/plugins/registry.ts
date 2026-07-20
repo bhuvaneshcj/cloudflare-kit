@@ -27,10 +27,7 @@ export class PluginRegistry {
         if (plugin.dependencies) {
             for (const dep of plugin.dependencies) {
                 if (!this.plugins.has(dep)) {
-                    throw new PluginError(
-                        `Plugin "${plugin.name}" requires "${dep}" which is not registered`,
-                        plugin.name,
-                    );
+                    throw new PluginError(`Plugin "${plugin.name}" requires "${dep}" which is not registered`, plugin.name);
                 }
             }
         }
@@ -93,10 +90,7 @@ export class PluginRegistry {
                     context.logger.debug(`Plugin "${entry.plugin.name}" installed successfully`);
                 } catch (error) {
                     entry.error = error instanceof Error ? error : new Error(String(error));
-                    throw new PluginError(
-                        `Failed to install plugin "${entry.plugin.name}": ${entry.error.message}`,
-                        entry.plugin.name,
-                    );
+                    throw new PluginError(`Failed to install plugin "${entry.plugin.name}": ${entry.error.message}`, entry.plugin.name);
                 }
             }
         }

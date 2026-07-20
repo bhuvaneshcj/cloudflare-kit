@@ -113,9 +113,7 @@ export function createQueue<T = unknown>(options: QueueOptions) {
  * };
  * ```
  */
-export function createQueueConsumer<T = unknown>(
-    processor: QueueHandler<T>,
-): (batch: MessageBatch<T>, _env: unknown, _ctx: ExecutionContext) => Promise<void> {
+export function createQueueConsumer<T = unknown>(processor: QueueHandler<T>): (batch: MessageBatch<T>, _env: unknown, _ctx: ExecutionContext) => Promise<void> {
     return async (batch: MessageBatch<T>, _env: unknown, _ctx: ExecutionContext) => {
         for (const message of batch.messages) {
             try {

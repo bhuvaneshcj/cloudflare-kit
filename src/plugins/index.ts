@@ -68,11 +68,7 @@ export function createPlugin(
 /**
  * Compose multiple plugins into one
  */
-export function composePlugins(
-    name: string,
-    version: string,
-    ...plugins: import("./types").Plugin[]
-): import("./types").Plugin {
+export function composePlugins(name: string, version: string, ...plugins: import("./types").Plugin[]): import("./types").Plugin {
     return definePlugin({
         name,
         version,

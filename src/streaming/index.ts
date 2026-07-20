@@ -239,10 +239,7 @@ export function streamJSON(stream: ReadableStream): Response {
  * });
  * ```
  */
-export function createStreamResponse(
-    fn: (writer: StreamWriter) => Promise<void>,
-    contentType = "text/plain",
-): Response {
+export function createStreamResponse(fn: (writer: StreamWriter) => Promise<void>, contentType = "text/plain"): Response {
     const stream = new TransformStream();
     const writer = stream.writable.getWriter();
     const encoder = new TextEncoder();
@@ -357,11 +354,7 @@ export function createNDJSONStream(fn: (writer: StreamWriter) => Promise<void>):
  * });
  * ```
  */
-export function pipeStream(
-    stream: ReadableStream | null,
-    contentType: string,
-    headers?: Record<string, string>,
-): Response {
+export function pipeStream(stream: ReadableStream | null, contentType: string, headers?: Record<string, string>): Response {
     if (!stream) {
         return new Response("Stream not found", { status: 404 });
     }

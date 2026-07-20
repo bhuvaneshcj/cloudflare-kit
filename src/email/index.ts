@@ -6,12 +6,7 @@
  */
 
 function escapeHtml(value: string): string {
-    return value
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#39;");
+    return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
 /**
@@ -170,9 +165,7 @@ export function createMailer(options: MailerOptions) {
                 await options.binding.send(message);
                 return { success: true, messageId: crypto.randomUUID() };
             } catch (error) {
-                throw new Error(
-                    `Email binding send failed: ${error instanceof Error ? error.message : "Unknown error"}`,
-                );
+                throw new Error(`Email binding send failed: ${error instanceof Error ? error.message : "Unknown error"}`);
             }
         }
 
@@ -284,12 +277,7 @@ export function createMailer(options: MailerOptions) {
     /**
      * Send an email using a registered template
      */
-    async function sendTemplate(
-        templateName: string,
-        data: Record<string, unknown>,
-        to: EmailAddress,
-        subject?: string,
-    ): Promise<EmailResult> {
+    async function sendTemplate(templateName: string, data: Record<string, unknown>, to: EmailAddress, subject?: string): Promise<EmailResult> {
         const template = templates.get(templateName);
 
         if (!template) {

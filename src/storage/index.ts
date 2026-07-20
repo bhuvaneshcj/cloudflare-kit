@@ -107,26 +107,14 @@ function base64UrlToBytes(str: string): Uint8Array {
 
 async function hmacSign(secret: string, message: string): Promise<string> {
     const encoder = new TextEncoder();
-    const key = await crypto.subtle.importKey(
-        "raw",
-        encoder.encode(secret),
-        { name: "HMAC", hash: "SHA-256" },
-        false,
-        ["sign"],
-    );
+    const key = await crypto.subtle.importKey("raw", encoder.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
     const signature = await crypto.subtle.sign("HMAC", key, encoder.encode(message));
     return bytesToBase64Url(new Uint8Array(signature));
 }
 
 async function hmacVerify(secret: string, message: string, signature: string): Promise<boolean> {
     const encoder = new TextEncoder();
-    const key = await crypto.subtle.importKey(
-        "raw",
-        encoder.encode(secret),
-        { name: "HMAC", hash: "SHA-256" },
-        false,
-        ["verify"],
-    );
+    const key = await crypto.subtle.importKey("raw", encoder.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["verify"]);
     const sigBytes = base64UrlToBytes(signature);
     return crypto.subtle.verify("HMAC", key, sigBytes, encoder.encode(message));
 }
@@ -134,17 +122,11 @@ async function hmacVerify(secret: string, message: string, signature: string): P
 /**
  * Standalone verify helper (same algorithm as createStorage().verifySignedUploadToken)
  */
-export async function verifySignedUploadToken(
-    token: string,
-    secret: string,
-): Promise<import("./types").SignedUploadPayload | null> {
+export async function verifySignedUploadToken(token: string, secret: string): Promise<import("./types").SignedUploadPayload | null> {
     return verifySignedUploadTokenWithSecret(token, secret);
 }
 
-async function verifySignedUploadTokenWithSecret(
-    token: string,
-    secret: string,
-): Promise<import("./types").SignedUploadPayload | null> {
+async function verifySignedUploadTokenWithSecret(token: string, secret: string): Promise<import("./types").SignedUploadPayload | null> {
     try {
         const [payloadPart, signature] = token.split(".");
         if (!payloadPart || !signature) return null;
@@ -218,11 +200,7 @@ export function createStorage(config: StorageConfig): StorageService {
          * Upload via streaming (memory-efficient)
          * Recommended for files < 100MB
          */
-        async uploadStream(
-            key: string,
-            stream: ReadableStream<Uint8Array>,
-            options?: UploadOptions,
-        ): Promise<UploadResult> {
+        async uploadStream(key: string, stream: ReadableStream<Uint8Array>, options?: UploadOptions): Promise<UploadResult> {
             try {
                 // For streams, we can't validate size beforehand
                 // Validation happens at the edge/R2 level
@@ -266,19 +244,10 @@ export function createStorage(config: StorageConfig): StorageService {
          * Upload via multipart (for large files)
          * Recommended for files > 100MB
          */
-        async uploadMultipart(
-            key: string,
-            stream: ReadableStream<Uint8Array>,
-            totalSize: number,
-            options?: UploadOptions,
-        ): Promise<UploadResult> {
+        async uploadMultipart(key: string, stream: ReadableStream<Uint8Array>, totalSize: number, options?: UploadOptions): Promise<UploadResult> {
             // Validate before starting
             if (totalSize > maxFileSize) {
-                throw new FileTooLargeError(
-                    `File size ${formatBytes(totalSize)} exceeds maximum ${formatBytes(maxFileSize)}`,
-                    maxFileSize,
-                    totalSize,
-                );
+                throw new FileTooLargeError(`File size ${formatBytes(totalSize)} exceeds maximum ${formatBytes(maxFileSize)}`, maxFileSize, totalSize);
             }
 
             const metadata: FileMetadata = {
@@ -405,12 +374,7 @@ export function createStorage(config: StorageConfig): StorageService {
 
             // Determine strategy
             const strategy =
-                options?.strategy ||
-                (uploadStrategy === "auto"
-                    ? shouldUseMultipart(size, maxFileSize * 0.8)
-                        ? "multipart"
-                        : "stream"
-                    : uploadStrategy);
+                options?.strategy || (uploadStrategy === "auto" ? (shouldUseMultipart(size, maxFileSize * 0.8) ? "multipart" : "stream") : uploadStrategy);
 
             if (strategy === "multipart" && size > 0) {
                 if (!request.body) {
@@ -445,10 +409,7 @@ export function createStorage(config: StorageConfig): StorageService {
             },
         ): Promise<SignedUploadUrl> {
             if (!signingSecret || signingSecret.length < 16) {
-                throw new SignedUrlError(
-                    key,
-                    "signingSecret (or signedUrls.secret) of at least 16 characters is required for signed uploads",
-                );
+                throw new SignedUrlError(key, "signingSecret (or signedUrls.secret) of at least 16 characters is required for signed uploads");
             }
 
             const expiration = options?.expiration ?? signedUrlConfig.defaultExpiration;
@@ -529,11 +490,7 @@ export function createStorage(config: StorageConfig): StorageService {
                 if (error instanceof FileNotFoundError) {
                     throw error;
                 }
-                throw new DownloadFailedError(
-                    key,
-                    error instanceof Error ? error.message : undefined,
-                    error instanceof Error ? error : undefined,
-                );
+                throw new DownloadFailedError(key, error instanceof Error ? error.message : undefined, error instanceof Error ? error : undefined);
             }
         },
 
@@ -592,10 +549,7 @@ export function createStorage(config: StorageConfig): StorageService {
                 await bucket.delete(keys);
                 return { success: true, deleted: keys.length };
             } catch (error) {
-                throw new DeleteFailedError(
-                    keys.join(", "),
-                    error instanceof Error ? error.message : "Batch delete failed",
-                );
+                throw new DeleteFailedError(keys.join(", "), error instanceof Error ? error.message : "Batch delete failed");
             }
         },
 
@@ -627,11 +581,7 @@ export function createStorage(config: StorageConfig): StorageService {
         /**
          * Copy a file
          */
-        async copy(
-            sourceKey: string,
-            destinationKey: string,
-            options?: { metadata?: Record<string, string> },
-        ): Promise<UploadResult> {
+        async copy(sourceKey: string, destinationKey: string, options?: { metadata?: Record<string, string> }): Promise<UploadResult> {
             try {
                 const source = await bucket.get(sourceKey);
                 if (!source) {

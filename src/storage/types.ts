@@ -370,12 +370,7 @@ export interface StorageService {
     /**
      * Upload a file via multipart (recommended for files >100MB)
      */
-    uploadMultipart(
-        key: string,
-        stream: ReadableStream<Uint8Array>,
-        totalSize: number,
-        options?: UploadOptions,
-    ): Promise<UploadResult>;
+    uploadMultipart(key: string, stream: ReadableStream<Uint8Array>, totalSize: number, options?: UploadOptions): Promise<UploadResult>;
 
     /**
      * Upload from a Request object (handles streaming automatically)
@@ -432,11 +427,7 @@ export interface StorageService {
     /**
      * Copy a file
      */
-    copy(
-        sourceKey: string,
-        destinationKey: string,
-        options?: { metadata?: Record<string, string> },
-    ): Promise<UploadResult>;
+    copy(sourceKey: string, destinationKey: string, options?: { metadata?: Record<string, string> }): Promise<UploadResult>;
 
     /**
      * Move/rename a file

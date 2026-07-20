@@ -65,11 +65,7 @@ export function createDatabase(options: DatabaseOptions): DatabaseService {
                 const statement = db.prepare(sql);
                 return await statement.bind(...params).all<T>();
             } catch (error) {
-                throw new DatabaseError(
-                    error instanceof Error ? error.message : "Database query failed",
-                    sql,
-                    error instanceof Error ? error : undefined,
-                );
+                throw new DatabaseError(error instanceof Error ? error.message : "Database query failed", sql, error instanceof Error ? error : undefined);
             }
         },
 
@@ -78,11 +74,7 @@ export function createDatabase(options: DatabaseOptions): DatabaseService {
                 const statement = db.prepare(sql);
                 return await statement.bind(...params).first<T>();
             } catch (error) {
-                throw new DatabaseError(
-                    error instanceof Error ? error.message : "Database get failed",
-                    sql,
-                    error instanceof Error ? error : undefined,
-                );
+                throw new DatabaseError(error instanceof Error ? error.message : "Database get failed", sql, error instanceof Error ? error : undefined);
             }
         },
 
@@ -91,11 +83,7 @@ export function createDatabase(options: DatabaseOptions): DatabaseService {
                 const statement = db.prepare(sql);
                 return await statement.bind(...params).run();
             } catch (error) {
-                throw new DatabaseError(
-                    error instanceof Error ? error.message : "Database execute failed",
-                    sql,
-                    error instanceof Error ? error : undefined,
-                );
+                throw new DatabaseError(error instanceof Error ? error.message : "Database execute failed", sql, error instanceof Error ? error : undefined);
             }
         },
 

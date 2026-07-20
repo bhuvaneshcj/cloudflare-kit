@@ -204,12 +204,7 @@ export function createApp(options: AppOptions = {}): App {
         pluginsInstalled = true;
     }
 
-    function addRoute(
-        method: string,
-        path: string,
-        handlers: Array<Middleware | Handler>,
-        groupMiddleware: Middleware[] = [],
-    ): void {
+    function addRoute(method: string, path: string, handlers: Array<Middleware | Handler>, groupMiddleware: Middleware[] = []): void {
         const { pattern, paramNames, isWildcard } = parseRoutePattern(path);
         const { middleware: routeMiddleware, handler } = splitHandlers(handlers);
 
@@ -308,10 +303,7 @@ export function createApp(options: AppOptions = {}): App {
         };
     }
 
-    async function executeMiddlewares(
-        middlewaresToRun: Middleware[],
-        context: RouterContext,
-    ): Promise<Response | null> {
+    async function executeMiddlewares(middlewaresToRun: Middleware[], context: RouterContext): Promise<Response | null> {
         for (const middleware of middlewaresToRun) {
             const result = await middleware(context);
             if (result instanceof Response) {
@@ -369,11 +361,7 @@ export function createApp(options: AppOptions = {}): App {
             return this;
         },
 
-        async fetch(
-            request: Request,
-            env: Record<string, unknown>,
-            executionContext: ExecutionContext,
-        ): Promise<Response> {
+        async fetch(request: Request, env: Record<string, unknown>, executionContext: ExecutionContext): Promise<Response> {
             await ensurePluginsInstalled(env);
 
             const url = new URL(request.url);
@@ -446,11 +434,7 @@ export function createApp(options: AppOptions = {}): App {
                 return response;
             } catch (error) {
                 console.error("Handler error:", error);
-                await registry.emit(
-                    "request:error",
-                    context,
-                    error instanceof Error ? error : new Error(String(error)),
-                );
+                await registry.emit("request:error", context, error instanceof Error ? error : new Error(String(error)));
 
                 if (options.onError) {
                     const custom = await options.onError(error, context);

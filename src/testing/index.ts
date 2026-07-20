@@ -171,11 +171,7 @@ export interface TestApp {
  */
 export function createTestApp(app: App): TestApp {
     const env = mockEnv();
-    const makeRequest = async (
-        method: string,
-        path: string,
-        options: MockRequestOptions = {},
-    ): Promise<TestResponse> => {
+    const makeRequest = async (method: string, path: string, options: MockRequestOptions = {}): Promise<TestResponse> => {
         const request = mockRequest(method, path, options);
         const response = await app.fetch(request, env, createMockExecutionContext());
         const body = await response.text();
@@ -779,10 +775,7 @@ export function createMockExecutionContext(): ExecutionContext {
  * @param response - TestResponse from createTestApp
  * @param expected - Expected JSON data (partial match)
  */
-export async function expectJSON<T extends Record<string, unknown>>(
-    response: TestResponse,
-    expected: Partial<T>,
-): Promise<void> {
+export async function expectJSON<T extends Record<string, unknown>>(response: TestResponse, expected: Partial<T>): Promise<void> {
     if (response.status !== 200) {
         throw new Error(`Expected status 200, got ${response.status}: ${response.body}`);
     }

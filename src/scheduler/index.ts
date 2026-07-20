@@ -21,11 +21,7 @@ export interface ScheduledEvent {
 /**
  * Scheduled handler function
  */
-export type ScheduledHandler = (
-    event: ScheduledEvent,
-    env: Record<string, unknown>,
-    ctx: ExecutionContext,
-) => void | Promise<void>;
+export type ScheduledHandler = (event: ScheduledEvent, env: Record<string, unknown>, ctx: ExecutionContext) => void | Promise<void>;
 
 /**
  * Cron registration
@@ -64,11 +60,7 @@ export function createScheduler(): Scheduler {
     /**
      * The scheduled handler for Cloudflare
      */
-    async function scheduled(
-        event: ScheduledEvent,
-        env: Record<string, unknown>,
-        ctx: ExecutionContext,
-    ): Promise<void> {
+    async function scheduled(event: ScheduledEvent, env: Record<string, unknown>, ctx: ExecutionContext): Promise<void> {
         // Find matching cron handlers
         const matchingCrons = crons.filter((c) => c.expression === event.cron);
 

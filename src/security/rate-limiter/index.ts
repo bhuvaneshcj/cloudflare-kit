@@ -7,14 +7,7 @@
 import { RateLimitError } from "../../errors";
 import type { RateLimiter, RateLimiterConfig, RateLimitResult, RateLimitData } from "./types";
 
-export type {
-    RateLimiter,
-    RateLimiterConfig,
-    RateLimitResult,
-    RateLimitData,
-    RateLimitStore,
-    RateLimitMiddlewareOptions,
-} from "./types";
+export type { RateLimiter, RateLimiterConfig, RateLimitResult, RateLimitData, RateLimitStore, RateLimitMiddlewareOptions } from "./types";
 
 export { createMemoryRateLimitStore } from "./memory-store";
 export { createKVRateLimitStore } from "./kv-store";
@@ -144,13 +137,7 @@ export function createRateLimiter(config: RateLimiterConfig): RateLimiter {
 
             if (!allowed) {
                 const retryAfter = Math.ceil((data.resetAt - Date.now()) / 1000);
-                throw new RateLimitError(
-                    config.message ?? "Too many requests",
-                    retryAfter,
-                    maxRequests,
-                    0,
-                    Math.floor(data.resetAt / 1000),
-                );
+                throw new RateLimitError(config.message ?? "Too many requests", retryAfter, maxRequests, 0, Math.floor(data.resetAt / 1000));
             }
 
             return {

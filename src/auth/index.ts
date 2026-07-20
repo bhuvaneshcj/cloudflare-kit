@@ -152,13 +152,7 @@ export function createAuth(options: AuthOptions): AuthService {
                 const data = `${encodedHeader}.${encodedPayload}`;
 
                 const encoder = new TextEncoder();
-                const key = await crypto.subtle.importKey(
-                    "raw",
-                    encoder.encode(secret),
-                    { name: "HMAC", hash: "SHA-256" },
-                    false,
-                    ["sign"],
-                );
+                const key = await crypto.subtle.importKey("raw", encoder.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
 
                 const signature = await crypto.subtle.sign("HMAC", key, encoder.encode(data));
                 const encodedSignature = bytesToBase64Url(new Uint8Array(signature));
@@ -182,9 +176,7 @@ export function createAuth(options: AuthOptions): AuthService {
                 return { success: false, error: "Invalid authorization header" };
             }
 
-            const token = authHeaderOrToken.startsWith("Bearer ")
-                ? authHeaderOrToken.slice(7)
-                : authHeaderOrToken;
+            const token = authHeaderOrToken.startsWith("Bearer ") ? authHeaderOrToken.slice(7) : authHeaderOrToken;
 
             try {
                 const secret = getSecret(env);
@@ -210,13 +202,7 @@ export function createAuth(options: AuthOptions): AuthService {
 
                 const data = `${encodedHeader}.${encodedPayload}`;
                 const encoder = new TextEncoder();
-                const key = await crypto.subtle.importKey(
-                    "raw",
-                    encoder.encode(secret),
-                    { name: "HMAC", hash: "SHA-256" },
-                    false,
-                    ["verify"],
-                );
+                const key = await crypto.subtle.importKey("raw", encoder.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["verify"]);
 
                 const signatureBytes = base64UrlToBytes(encodedSignature);
                 const isValid = await crypto.subtle.verify("HMAC", key, signatureBytes, encoder.encode(data));

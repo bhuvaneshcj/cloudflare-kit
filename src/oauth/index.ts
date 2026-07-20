@@ -254,12 +254,7 @@ export function createOAuth(options: OAuthOptions) {
      * @param state - The state returned by the provider callback
      * @param expectedState - The state you stored from getAuthUrl(); when provided, must match `state`
      */
-    async function handleCallback(
-        code: string,
-        codeVerifier: string,
-        state?: string,
-        expectedState?: string,
-    ): Promise<OAuthResult> {
+    async function handleCallback(code: string, codeVerifier: string, state?: string, expectedState?: string): Promise<OAuthResult> {
         if (expectedState !== undefined) {
             if (!state || state !== expectedState) {
                 throw new Error("OAuth state mismatch — possible CSRF attack");

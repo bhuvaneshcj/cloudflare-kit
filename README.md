@@ -64,10 +64,7 @@ export default {
 
         app.post("/auth/login", async (ctx) => {
             const body = (ctx.state.body || {}) as { email?: string; password?: string };
-            const user = await db.get<{ id: string; email: string }>(
-                "SELECT * FROM users WHERE email = ?",
-                [body.email],
-            );
+            const user = await db.get<{ id: string; email: string }>("SELECT * FROM users WHERE email = ?", [body.email]);
             if (!user) return errorResponse("Invalid credentials", 401);
             const result = await auth.createToken({ id: user.id, email: user.email }, ctx.env);
             return jsonResponse({ token: result.token, user: { id: user.id, email: user.email } });
@@ -79,26 +76,14 @@ export default {
             age: v.number().min(18).optional(),
         });
 
-        app.post(
-            "/api/users",
-            requireAuth(auth),
-            createValidator({ body: userSchema }),
-            async (ctx) => {
-                const userData = ctx.state.body as { name: string; email: string; age?: number };
-                const result = await db.execute(
-                    "INSERT INTO users (name, email, age) VALUES (?, ?, ?)",
-                    [userData.name, userData.email, userData.age ?? null],
-                );
-                return jsonResponse({ id: result.meta?.last_row_id, ...userData }, 201);
-            },
-        );
+        app.post("/api/users", requireAuth(auth), createValidator({ body: userSchema }), async (ctx) => {
+            const userData = ctx.state.body as { name: string; email: string; age?: number };
+            const result = await db.execute("INSERT INTO users (name, email, age) VALUES (?, ?, ?)", [userData.name, userData.email, userData.age ?? null]);
+            return jsonResponse({ id: result.meta?.last_row_id, ...userData }, 201);
+        });
 
         app.get("/api/users/:id", async (ctx) => {
-            const user = await cache.getOrSet(
-                `user:${ctx.params.id}`,
-                () => db.get("SELECT * FROM users WHERE id = ?", [ctx.params.id]),
-                300,
-            );
+            const user = await cache.getOrSet(`user:${ctx.params.id}`, () => db.get("SELECT * FROM users WHERE id = ?", [ctx.params.id]), 300);
             if (!user) return errorResponse("User not found", 404);
             return jsonResponse(user);
         });
@@ -109,6 +94,7 @@ export default {
 ```
 
 Middleware returns `Response` to short-circuit, or `void`/`undefined` to continue. There is no Express-style `next()` callback.
+
 ## Features
 
 | Module                     | What it does                                        | Cloudflare Primitive |
@@ -269,11 +255,7 @@ const value = await cache.get<{ data: string }>("key");
 await cache.delete("key");
 
 // Get or set (cache-aside pattern)
-const user = await cache.getOrSet(
-    `user:${userId}`,
-    async () => db.get("SELECT * FROM users WHERE id = ?", [userId]),
-    600,
-);
+const user = await cache.getOrSet(`user:${userId}`, async () => db.get("SELECT * FROM users WHERE id = ?", [userId]), 600);
 
 // Cache tags for invalidation
 await cache.setWithTags("user:123", userData, ["users", "user:123"], 600);
@@ -726,10 +708,7 @@ const ai = createAI({
 });
 
 // Text generation
-const summary = await ai.text(
-    "Summarize this article in 3 bullet points: " + articleText,
-    "@cf/meta/llama-3.1-8b-instruct",
-);
+const summary = await ai.text("Summarize this article in 3 bullet points: " + articleText, "@cf/meta/llama-3.1-8b-instruct");
 
 // Embeddings
 const embedding = await ai.embed("The quick brown fox", "@cf/baai/bge-small-en-v1.5");
@@ -959,15 +938,7 @@ registry.applyTo(app);
 Typed error classes with automatic HTTP status codes.
 
 ```typescript
-import {
-    HttpError,
-    ValidationError,
-    AuthError,
-    RateLimitError,
-    DatabaseError,
-    CacheError,
-    handleError,
-} from "cloudflare-kit";
+import { HttpError, ValidationError, AuthError, RateLimitError, DatabaseError, CacheError, handleError } from "cloudflare-kit";
 
 // Throw typed errors
 if (!user) throw new AuthError("Invalid credentials", 401);
@@ -1166,10 +1137,7 @@ const createUserSchema = v.object({
 app.post("/auth/login", createValidator(loginSchema), async (ctx) => {
     const { email, password } = ctx.body as { email: string; password: string };
 
-    const user = await db.get<{ id: string; email: string; password_hash: string }>(
-        "SELECT * FROM users WHERE email = ?",
-        [email],
-    );
+    const user = await db.get<{ id: string; email: string; password_hash: string }>("SELECT * FROM users WHERE email = ?", [email]);
 
     if (!user || !(await verifyPassword(password, user.password_hash))) {
         throw new AuthError("Invalid credentials");
@@ -1242,10 +1210,7 @@ app.get("/api/posts", async (ctx) => {
     const result = await cache.getOrSet(
         cacheKey,
         async () => {
-            const posts = await db.query("SELECT * FROM posts ORDER BY created_at DESC LIMIT ? OFFSET ?", [
-                limit,
-                (page - 1) * limit,
-            ]);
+            const posts = await db.query("SELECT * FROM posts ORDER BY created_at DESC LIMIT ? OFFSET ?", [limit, (page - 1) * limit]);
             const { count } = await db.get<{ count: number }>("SELECT COUNT(*) as count FROM posts");
             return { posts, total: count, page, limit };
         },

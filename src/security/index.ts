@@ -54,9 +54,7 @@ export function rateLimit(options: RateLimitOptions): Middleware {
     }
 
     return async (context: RequestContext): Promise<Response | void> => {
-        const key = options.keyGenerator
-            ? options.keyGenerator(context.request)
-            : context.request.headers.get("CF-Connecting-IP") || "unknown";
+        const key = options.keyGenerator ? options.keyGenerator(context.request) : context.request.headers.get("CF-Connecting-IP") || "unknown";
 
         const now = Date.now();
         const windowMs = options.windowSeconds * 1000;

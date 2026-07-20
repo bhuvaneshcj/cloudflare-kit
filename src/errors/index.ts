@@ -117,11 +117,7 @@ export class ValidationError extends CloudflareKitError {
     readonly field?: string;
     readonly errors: Array<{ field: string; message: string; code?: string }>;
 
-    constructor(
-        message: string,
-        field?: string,
-        errors: Array<{ field: string; message: string; code?: string }> = [],
-    ) {
+    constructor(message: string, field?: string, errors: Array<{ field: string; message: string; code?: string }> = []) {
         super(message, "VALIDATION_ERROR", 400, true);
         this.field = field;
         this.errors = errors;
@@ -139,20 +135,14 @@ export class ValidationError extends CloudflareKitError {
         };
     }
 
-    static fromZodError(zodError: {
-        issues: Array<{ path: (string | number)[]; message: string; code: string }>;
-    }): ValidationError {
+    static fromZodError(zodError: { issues: Array<{ path: (string | number)[]; message: string; code: string }> }): ValidationError {
         const errors = zodError.issues.map((issue) => ({
             field: issue.path.join("."),
             message: issue.message,
             code: issue.code,
         }));
 
-        return new ValidationError(
-            `Validation failed: ${errors.map((e) => `${e.field} - ${e.message}`).join(", ")}`,
-            undefined,
-            errors,
-        );
+        return new ValidationError(`Validation failed: ${errors.map((e) => `${e.field} - ${e.message}`).join(", ")}`, undefined, errors);
     }
 }
 
@@ -194,13 +184,7 @@ export class RateLimitError extends CloudflareKitError {
     readonly remaining?: number;
     readonly resetTime?: number;
 
-    constructor(
-        message: string = "Too Many Requests",
-        retryAfter?: number,
-        limit?: number,
-        remaining?: number,
-        resetTime?: number,
-    ) {
+    constructor(message: string = "Too Many Requests", retryAfter?: number, limit?: number, remaining?: number, resetTime?: number) {
         super(message, "RATE_LIMITED", 429, true);
         this.retryAfter = retryAfter;
         this.limit = limit;

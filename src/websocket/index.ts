@@ -151,11 +151,7 @@ export function createWebSocketHandler(options: WebSocketHandlerOptions) {
     const connections = activeConnections.get(handlerId)!;
 
     return {
-        async fetch(
-            request: Request,
-            env: Record<string, unknown>,
-            _executionContext: ExecutionContext,
-        ): Promise<Response> {
+        async fetch(request: Request, env: Record<string, unknown>, _executionContext: ExecutionContext): Promise<Response> {
             // Check for WebSocket upgrade header
             const upgradeHeader = request.headers.get("Upgrade");
             if (upgradeHeader !== "websocket") {
@@ -319,12 +315,7 @@ export function createDurableWebSocket(options: DurableWebSocketHandlerOptions) 
          * Accept a WebSocket upgrade. Does not attach addEventListener handlers
          * (those would be lost on hibernation). Wire DO hibernation methods instead.
          */
-        async fetch(
-            request: Request,
-            env: Record<string, unknown>,
-            durableState: DurableObjectState,
-            storage?: DurableObjectStorage,
-        ): Promise<Response> {
+        async fetch(request: Request, env: Record<string, unknown>, durableState: DurableObjectState, storage?: DurableObjectStorage): Promise<Response> {
             const upgradeHeader = request.headers.get("Upgrade");
             if (upgradeHeader !== "websocket") {
                 return new Response(JSON.stringify({ error: "Expected Upgrade: websocket header" }), {

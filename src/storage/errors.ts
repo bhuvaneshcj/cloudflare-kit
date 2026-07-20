@@ -40,12 +40,7 @@ export class InvalidMimeTypeError extends CloudflareKitError {
     readonly allowedTypes: string[];
 
     constructor(mimeType: string, allowedTypes: string[]) {
-        super(
-            `MIME type '${mimeType}' is not allowed. Allowed types: ${allowedTypes.join(", ")}`,
-            "INVALID_MIME_TYPE",
-            415,
-            true,
-        );
+        super(`MIME type '${mimeType}' is not allowed. Allowed types: ${allowedTypes.join(", ")}`, "INVALID_MIME_TYPE", 415, true);
         this.mimeType = mimeType;
         this.allowedTypes = allowedTypes;
     }
@@ -71,12 +66,7 @@ export class InvalidFileExtensionError extends CloudflareKitError {
     readonly allowedExtensions: string[];
 
     constructor(extension: string, allowedExtensions: string[]) {
-        super(
-            `File extension '.${extension}' is not allowed. Allowed extensions: ${allowedExtensions.join(", ")}`,
-            "INVALID_FILE_EXTENSION",
-            415,
-            true,
-        );
+        super(`File extension '.${extension}' is not allowed. Allowed extensions: ${allowedExtensions.join(", ")}`, "INVALID_FILE_EXTENSION", 415, true);
         this.extension = extension;
         this.allowedExtensions = allowedExtensions;
     }
