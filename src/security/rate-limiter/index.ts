@@ -172,15 +172,30 @@ export function createRateLimiter(config: RateLimiterConfig): RateLimiter {
 }
 
 /**
- * Create rate limit middleware
+ * Create rate limit middleware for createApp (RequestContext-shaped)
+ */
+export function createRateLimitMiddleware(limiter: RateLimiter): import("../../core/types").Middleware {
+    return async (context) => {
+        try {
+            await limiter.consume(context.request);
+            return undefined;
+        } catch (error) {
+            if (error instanceof RateLimitError) {
+                return error.toResponse();
+            }
+            throw error;
+        }
+    };
+}
+
+/**
+ * Create rate limit middleware (raw Request — legacy)
  */
 export function rateLimit(limiter: RateLimiter) {
     return async (request: Request): Promise<Response | undefined> => {
         try {
             await limiter.consume(request);
 
-            // Return undefined to continue to next middleware/handler
-            // Headers will be added by the app
             return undefined;
         } catch (error) {
             if (error instanceof RateLimitError) {

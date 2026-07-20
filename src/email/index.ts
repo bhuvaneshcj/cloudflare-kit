@@ -5,6 +5,15 @@
  * Works with Cloudflare Workers without external dependencies.
  */
 
+function escapeHtml(value: string): string {
+    return value
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+}
+
 /**
  * Cloudflare SendEmail binding interface
  */
@@ -149,42 +158,41 @@ export function createMailer(options: MailerOptions) {
 
     /**
      * Send an email
+     *
+     * Note: The MailChannels free API path is deprecated/unauthenticated and may fail.
+     * Prefer the Cloudflare Email binding when available.
      */
     async function send(emailOptions: EmailOptions): Promise<EmailResult> {
-        try {
-            // Use Cloudflare Email binding if available
-            if (options.binding) {
+        // Use Cloudflare Email binding if available
+        if (options.binding) {
+            try {
                 const message = buildBindingMessage(emailOptions);
                 await options.binding.send(message);
                 return { success: true, messageId: crypto.randomUUID() };
+            } catch (error) {
+                throw new Error(
+                    `Email binding send failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+                );
             }
-
-            // Fall back to MailChannels API
-            const requestBody = buildMailChannelsRequest(emailOptions);
-
-            const response = await fetch(MAILCHANNELS_API, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify(requestBody),
-            });
-
-            if (response.ok) {
-                return { success: true, messageId: crypto.randomUUID() };
-            } else {
-                const errorText = await response.text();
-                return {
-                    success: false,
-                    error: `MailChannels API error: ${response.status} - ${errorText}`,
-                };
-            }
-        } catch (error) {
-            return {
-                success: false,
-                error: error instanceof Error ? error.message : "Unknown error",
-            };
         }
+
+        // Fall back to MailChannels API (deprecated — prefer Email binding)
+        const requestBody = buildMailChannelsRequest(emailOptions);
+
+        const response = await fetch(MAILCHANNELS_API, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify(requestBody),
+        });
+
+        if (response.ok) {
+            return { success: true, messageId: crypto.randomUUID() };
+        }
+
+        const errorText = await response.text();
+        throw new Error(`MailChannels API error: ${response.status} - ${errorText}`);
     }
 
     /**
@@ -291,11 +299,11 @@ export function createMailer(options: MailerOptions) {
             };
         }
 
-        // Simple variable interpolation: {{variableName}}
+        // Simple variable interpolation: {{variableName}} (HTML-escaped)
         let html = template;
         for (const [key, value] of Object.entries(data)) {
             const regex = new RegExp(`\\{\\{\\s*${key}\\s*\\}\\}`, "g");
-            html = html.replace(regex, String(value));
+            html = html.replace(regex, escapeHtml(String(value)));
         }
 
         // Generate plain text version by stripping HTML tags

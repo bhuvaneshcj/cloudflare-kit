@@ -49,9 +49,19 @@ export interface StorageConfig {
     };
 
     /**
+     * Secret used to HMAC-sign upload tokens (required for createSignedUploadUrl)
+     */
+    signingSecret?: string;
+
+    /**
      * Signed URL configuration
      */
     signedUrls?: {
+        /**
+         * HMAC signing secret (preferred location; falls back to config.signingSecret)
+         */
+        secret?: string;
+
         /**
          * Default expiration time in seconds (default: 3600 = 1 hour)
          */
@@ -229,6 +239,11 @@ export interface SignedUploadUrl {
     expiresAt: Date;
 
     /**
+     * Opaque HMAC-signed token
+     */
+    token: string;
+
+    /**
      * Fields to include in the upload (for POST uploads)
      */
     fields?: Record<string, string | number | string[]>;
@@ -237,6 +252,17 @@ export interface SignedUploadUrl {
      * Headers to include (for PUT uploads)
      */
     headers?: Record<string, string>;
+}
+
+/**
+ * Payload decoded from a verified signed upload token
+ */
+export interface SignedUploadPayload {
+    key: string;
+    expiresAt: string;
+    maxSize?: number;
+    allowedMimeTypes?: string[];
+    nonce: string;
 }
 
 /**
@@ -357,7 +383,7 @@ export interface StorageService {
     uploadFromRequest(request: Request, key?: string, options?: UploadOptions): Promise<UploadResult>;
 
     /**
-     * Create a signed upload URL
+     * Create a signed upload URL (HMAC-signed; requires signingSecret)
      */
     createSignedUploadUrl(
         key: string,
@@ -367,6 +393,11 @@ export interface StorageService {
             allowedMimeTypes?: string[];
         },
     ): Promise<SignedUploadUrl>;
+
+    /**
+     * Verify a signed upload token produced by createSignedUploadUrl
+     */
+    verifySignedUploadToken(token: string): Promise<SignedUploadPayload | null>;
 
     /**
      * Download a file

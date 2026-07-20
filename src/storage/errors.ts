@@ -120,6 +120,20 @@ export class DownloadFailedError extends CloudflareKitError {
 }
 
 /**
+ * Error thrown when delete fails
+ */
+export class DeleteFailedError extends CloudflareKitError {
+    readonly key: string;
+    readonly originalError?: Error;
+
+    constructor(key: string, message?: string, originalError?: Error) {
+        super(message || `Failed to delete '${key}'`, "DELETE_FAILED", 500, false);
+        this.key = key;
+        this.originalError = originalError;
+    }
+}
+
+/**
  * Error thrown when file is not found
  */
 export class FileNotFoundError extends CloudflareKitError {

@@ -35,6 +35,8 @@ export interface ValidationResult<T> {
     errors?: ValidationErrorDetail[];
 }
 
+type ValidatorFn = (value: unknown, path: string) => ValidationErrorDetail[];
+
 /**
  * Base schema interface
  */
@@ -51,12 +53,11 @@ class SchemaImpl<T> implements Schema<T> {
     _type!: T;
 
     constructor(
-        private validators: Array<(value: unknown, path: string) => ValidationErrorDetail[]>,
-        private isOptional = false,
+        protected validators: ValidatorFn[],
+        protected isOptional = false,
     ) {}
 
     parse(value: unknown, path = ""): ValidationResult<T> {
-        // Handle optional
         if (value === undefined && this.isOptional) {
             return { success: true, data: undefined as T };
         }
@@ -76,8 +77,11 @@ class SchemaImpl<T> implements Schema<T> {
     }
 
     optional(): Schema<T | undefined> {
-        const optionalSchema = new SchemaImpl<T | undefined>(this.validators, true);
-        return optionalSchema;
+        return new SchemaImpl<T | undefined>(this.validators, true);
+    }
+
+    protected getValidators(): ValidatorFn[] {
+        return this.validators;
     }
 }
 
@@ -85,7 +89,7 @@ class SchemaImpl<T> implements Schema<T> {
  * String schema
  */
 class StringSchema extends SchemaImpl<string> {
-    constructor(validators: Array<(value: unknown, path: string) => ValidationErrorDetail[]> = []) {
+    constructor(validators: ValidatorFn[] = []) {
         super([
             (value, path) => {
                 if (typeof value !== "string") {
@@ -98,34 +102,32 @@ class StringSchema extends SchemaImpl<string> {
     }
 
     minLength(min: number): StringSchema {
-        const newValidators = [
-            ...this.getValidators(),
+        return new StringSchema([
+            ...this.getValidators().slice(1),
             (value: unknown, path: string) => {
                 if (typeof value === "string" && value.length < min) {
                     return [{ field: path || "value", message: `String must be at least ${min} characters` }];
                 }
                 return [];
             },
-        ];
-        return new StringSchema(newValidators.slice(1));
+        ]);
     }
 
     maxLength(max: number): StringSchema {
-        const newValidators = [
-            ...this.getValidators(),
+        return new StringSchema([
+            ...this.getValidators().slice(1),
             (value: unknown, path: string) => {
                 if (typeof value === "string" && value.length > max) {
                     return [{ field: path || "value", message: `String must be at most ${max} characters` }];
                 }
                 return [];
             },
-        ];
-        return new StringSchema(newValidators.slice(1));
+        ]);
     }
 
     email(): StringSchema {
-        const newValidators = [
-            ...this.getValidators(),
+        return new StringSchema([
+            ...this.getValidators().slice(1),
             (value: unknown, path: string) => {
                 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
                 if (typeof value === "string" && !emailRegex.test(value)) {
@@ -133,13 +135,12 @@ class StringSchema extends SchemaImpl<string> {
                 }
                 return [];
             },
-        ];
-        return new StringSchema(newValidators.slice(1));
+        ]);
     }
 
     url(): StringSchema {
-        const newValidators = [
-            ...this.getValidators(),
+        return new StringSchema([
+            ...this.getValidators().slice(1),
             (value: unknown, path: string) => {
                 if (typeof value !== "string") return [];
                 try {
@@ -149,12 +150,7 @@ class StringSchema extends SchemaImpl<string> {
                     return [{ field: path || "value", message: "Invalid URL" }];
                 }
             },
-        ];
-        return new StringSchema(newValidators.slice(1));
-    }
-
-    private getValidators(): Array<(value: unknown, path: string) => ValidationErrorDetail[]> {
-        return [];
+        ]);
     }
 }
 
@@ -162,7 +158,7 @@ class StringSchema extends SchemaImpl<string> {
  * Number schema
  */
 class NumberSchema extends SchemaImpl<number> {
-    constructor(validators: Array<(value: unknown, path: string) => ValidationErrorDetail[]> = []) {
+    constructor(validators: ValidatorFn[] = []) {
         super([
             (value, path) => {
                 if (typeof value !== "number" || isNaN(value)) {
@@ -175,33 +171,27 @@ class NumberSchema extends SchemaImpl<number> {
     }
 
     min(min: number): NumberSchema {
-        const newValidators = [
-            ...this.getValidators(),
+        return new NumberSchema([
+            ...this.getValidators().slice(1),
             (value: unknown, path: string) => {
                 if (typeof value === "number" && value < min) {
                     return [{ field: path || "value", message: `Number must be at least ${min}` }];
                 }
                 return [];
             },
-        ];
-        return new NumberSchema(newValidators.slice(1));
+        ]);
     }
 
     max(max: number): NumberSchema {
-        const newValidators = [
-            ...this.getValidators(),
+        return new NumberSchema([
+            ...this.getValidators().slice(1),
             (value: unknown, path: string) => {
                 if (typeof value === "number" && value > max) {
                     return [{ field: path || "value", message: `Number must be at most ${max}` }];
                 }
                 return [];
             },
-        ];
-        return new NumberSchema(newValidators.slice(1));
-    }
-
-    private getValidators(): Array<(value: unknown, path: string) => ValidationErrorDetail[]> {
-        return [];
+        ]);
     }
 }
 
@@ -279,71 +269,19 @@ class ObjectSchema<T extends Record<string, Schema<unknown>>> extends SchemaImpl
  * Schema builder namespace
  */
 export const v = {
-    /**
-     * Create a string schema
-     */
     string: (): StringSchema => new StringSchema(),
-
-    /**
-     * Create a number schema
-     */
     number: (): NumberSchema => new NumberSchema(),
-
-    /**
-     * Create a boolean schema
-     */
     boolean: (): BooleanSchema => new BooleanSchema(),
-
-    /**
-     * Create an email schema (string with email validation)
-     */
     email: (): StringSchema => new StringSchema().email(),
-
-    /**
-     * Create a URL schema (string with URL validation)
-     */
     url: (): StringSchema => new StringSchema().url(),
-
-    /**
-     * Create a string schema with minimum length
-     */
     minLength: (n: number): StringSchema => new StringSchema().minLength(n),
-
-    /**
-     * Create a string schema with maximum length
-     */
     maxLength: (n: number): StringSchema => new StringSchema().maxLength(n),
-
-    /**
-     * Create a number schema with minimum value
-     */
     min: (n: number): NumberSchema => new NumberSchema().min(n),
-
-    /**
-     * Create a number schema with maximum value
-     */
     max: (n: number): NumberSchema => new NumberSchema().max(n),
-
-    /**
-     * Create an array schema
-     */
     array: <T>(schema: Schema<T>): ArraySchema<T> => new ArraySchema(schema),
-
-    /**
-     * Create an object schema
-     */
     object: <T extends Record<string, Schema<unknown>>>(shape: T): ObjectSchema<T> => new ObjectSchema(shape),
-
-    /**
-     * Make a schema optional
-     */
     optional: <T>(schema: Schema<T>): Schema<T | undefined> => schema.optional(),
 };
-
-/**
- * Validation target type
- */
-export type ValidationTarget = "body" | "query" | "params";
 
 /**
  * Validator configuration
@@ -356,53 +294,20 @@ export interface ValidatorConfig {
 
 /**
  * Create a validator middleware
- *
- * @example
- * ```typescript
- * const userSchema = v.object({
- *   name: v.string().minLength(1),
- *   email: v.email(),
- *   age: v.number().min(0).optional()
- * });
- *
- * const validateUser = createValidator({ body: userSchema });
- *
- * app.post('/users', validateUser, async (ctx) => {
- *   // ctx.body is now typed as { name: string, email: string, age?: number }
- *   const { name, email, age } = ctx.body as { name: string; email: string; age?: number };
- *   // ...
- * });
- *
- * // Validate query parameters
- * const searchSchema = v.object({
- *   q: v.string().minLength(1),
- *   limit: v.number().max(100).optional()
- * });
- *
- * app.get('/search', createValidator({ query: searchSchema }), handler);
- *
- * // Validate route parameters
- * const paramsSchema = v.object({
- *   id: v.string()
- * });
- *
- * app.get('/users/:id', createValidator({ params: paramsSchema }), handler);
- * ```
  */
 export function createValidator(config: ValidatorConfig): Middleware {
     return async (context: RequestContext): Promise<Response | void> => {
         const errors: ValidationErrorDetail[] = [];
-
-        // Cast to validated context for access to params/query
         const ctx = context as ValidatedContext;
 
-        // Validate body
         if (config.body) {
-            let body: unknown;
-            try {
-                body = await context.request.clone().json();
-            } catch {
-                body = undefined;
+            let body: unknown = context.state.body;
+            if (body === undefined) {
+                try {
+                    body = await context.request.clone().json();
+                } catch {
+                    body = undefined;
+                }
             }
 
             const result = config.body.parse(body, "body");
@@ -410,15 +315,13 @@ export function createValidator(config: ValidatorConfig): Middleware {
                 errors.push(...result.errors);
             } else if (result.success) {
                 ctx.body = result.data;
+                context.state.body = result.data;
             }
         }
 
-        // Validate query
         if (config.query) {
-            // Convert query string values to appropriate types
             const parsedQuery: Record<string, unknown> = {};
             for (const [key, value] of Object.entries(ctx.query || {})) {
-                // Try to parse numbers
                 const numValue = Number(value);
                 if (!isNaN(numValue) && value === String(numValue)) {
                     parsedQuery[key] = numValue;
@@ -439,7 +342,6 @@ export function createValidator(config: ValidatorConfig): Middleware {
             }
         }
 
-        // Validate params
         if (config.params) {
             const result = config.params.parse(ctx.params || {}, "params");
             if (!result.success && result.errors) {
@@ -449,7 +351,6 @@ export function createValidator(config: ValidatorConfig): Middleware {
             }
         }
 
-        // Return 422 if validation failed
         if (errors.length > 0) {
             return new Response(
                 JSON.stringify({
@@ -465,9 +366,6 @@ export function createValidator(config: ValidatorConfig): Middleware {
     };
 }
 
-/**
- * Type helper for extracting validated types from a schema
- */
 export type InferSchema<T extends Schema<unknown>> = T["_type"];
 
 export type { Middleware, RequestContext };

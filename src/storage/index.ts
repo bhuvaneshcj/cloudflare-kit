@@ -47,6 +47,7 @@ import {
     InvalidMimeTypeError,
     UploadFailedError,
     DownloadFailedError,
+    DeleteFailedError,
     FileNotFoundError,
     MultipartUploadError,
     SignedUrlError,
@@ -65,6 +66,7 @@ export type {
     ListResult,
     StorageObject,
     SignedUploadUrl,
+    SignedUploadPayload,
     FileMetadata,
     FileValidationOptions,
     UploadProgress,
@@ -76,12 +78,92 @@ export {
     InvalidMimeTypeError,
     UploadFailedError,
     DownloadFailedError,
+    DeleteFailedError,
     FileNotFoundError,
     MultipartUploadError,
     SignedUrlError,
 } from "./errors";
 
 export { parseContentType, validateFile, formatBytes, shouldUseMultipart, calculatePartSize } from "./validation";
+
+function bytesToBase64Url(bytes: Uint8Array): string {
+    let binary = "";
+    for (let i = 0; i < bytes.length; i++) {
+        binary += String.fromCharCode(bytes[i]!);
+    }
+    return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
+}
+
+function base64UrlToBytes(str: string): Uint8Array {
+    const padding = "=".repeat((4 - (str.length % 4)) % 4);
+    const base64 = str.replace(/-/g, "+").replace(/_/g, "/") + padding;
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+        bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes;
+}
+
+async function hmacSign(secret: string, message: string): Promise<string> {
+    const encoder = new TextEncoder();
+    const key = await crypto.subtle.importKey(
+        "raw",
+        encoder.encode(secret),
+        { name: "HMAC", hash: "SHA-256" },
+        false,
+        ["sign"],
+    );
+    const signature = await crypto.subtle.sign("HMAC", key, encoder.encode(message));
+    return bytesToBase64Url(new Uint8Array(signature));
+}
+
+async function hmacVerify(secret: string, message: string, signature: string): Promise<boolean> {
+    const encoder = new TextEncoder();
+    const key = await crypto.subtle.importKey(
+        "raw",
+        encoder.encode(secret),
+        { name: "HMAC", hash: "SHA-256" },
+        false,
+        ["verify"],
+    );
+    const sigBytes = base64UrlToBytes(signature);
+    return crypto.subtle.verify("HMAC", key, sigBytes, encoder.encode(message));
+}
+
+/**
+ * Standalone verify helper (same algorithm as createStorage().verifySignedUploadToken)
+ */
+export async function verifySignedUploadToken(
+    token: string,
+    secret: string,
+): Promise<import("./types").SignedUploadPayload | null> {
+    return verifySignedUploadTokenWithSecret(token, secret);
+}
+
+async function verifySignedUploadTokenWithSecret(
+    token: string,
+    secret: string,
+): Promise<import("./types").SignedUploadPayload | null> {
+    try {
+        const [payloadPart, signature] = token.split(".");
+        if (!payloadPart || !signature) return null;
+
+        const valid = await hmacVerify(secret, payloadPart, signature);
+        if (!valid) return null;
+
+        const json = new TextDecoder().decode(base64UrlToBytes(payloadPart));
+        const payload = JSON.parse(json) as import("./types").SignedUploadPayload;
+
+        if (!payload.expiresAt || new Date(payload.expiresAt).getTime() < Date.now()) {
+            return null;
+        }
+
+        return payload;
+    } catch {
+        return null;
+    }
+}
 
 /**
  * Storage options (backward compatibility alias for StorageConfig)
@@ -115,6 +197,7 @@ export function createStorage(config: StorageConfig): StorageService {
     const uploadStrategy = config.uploadStrategy ?? DEFAULT_CONFIG.uploadStrategy;
     const multipartConfig = { ...DEFAULT_CONFIG.multipart, ...config.multipart };
     const signedUrlConfig = { ...DEFAULT_CONFIG.signedUrls, ...config.signedUrls };
+    const signingSecret = config.signedUrls?.secret ?? config.signingSecret;
 
     /**
      * Validate file before upload
@@ -224,15 +307,23 @@ export function createStorage(config: StorageConfig): StorageService {
                     customMetadata: options?.customMetadata,
                 });
 
-                // Read stream and upload parts
+                // Read stream and upload parts (carry leftover bytes across part boundaries)
                 const reader = stream.getReader();
                 let partNumber = 1;
                 let uploadedBytes = 0;
+                let leftover: Uint8Array | null = null;
 
                 while (partNumber <= partCount) {
-                    // Collect data for this part
                     const chunk = new Uint8Array(partSize);
                     let chunkOffset = 0;
+
+                    if (leftover && leftover.length > 0) {
+                        const toCopy = Math.min(leftover.length, partSize);
+                        chunk.set(leftover.subarray(0, toCopy), 0);
+                        chunkOffset = toCopy;
+                        uploadedBytes += toCopy;
+                        leftover = leftover.length > toCopy ? leftover.subarray(toCopy) : null;
+                    }
 
                     while (chunkOffset < partSize) {
                         const { done, value } = await reader.read();
@@ -243,17 +334,14 @@ export function createStorage(config: StorageConfig): StorageService {
                         chunkOffset += toCopy;
                         uploadedBytes += toCopy;
 
-                        // If we have more data in this chunk, we need to handle it
                         if (toCopy < value.length) {
-                            // This shouldn't happen with proper part sizing
-                            // but handle it just in case
+                            leftover = value.subarray(toCopy);
                             break;
                         }
                     }
 
-                    if (chunkOffset === 0) break; // No more data
+                    if (chunkOffset === 0) break;
 
-                    // Upload part
                     const partData = chunk.subarray(0, chunkOffset);
                     const uploadedPart = await multipartUpload.uploadPart(partNumber, partData);
 
@@ -262,7 +350,6 @@ export function createStorage(config: StorageConfig): StorageService {
                         etag: uploadedPart.etag,
                     });
 
-                    // Report progress
                     if (options?.onProgress) {
                         options.onProgress({
                             partNumber,
@@ -357,6 +444,13 @@ export function createStorage(config: StorageConfig): StorageService {
                 allowedMimeTypes?: string[];
             },
         ): Promise<SignedUploadUrl> {
+            if (!signingSecret || signingSecret.length < 16) {
+                throw new SignedUrlError(
+                    key,
+                    "signingSecret (or signedUrls.secret) of at least 16 characters is required for signed uploads",
+                );
+            }
+
             const expiration = options?.expiration ?? signedUrlConfig.defaultExpiration;
             const maxExpiration = signedUrlConfig.maxExpiration;
 
@@ -366,7 +460,6 @@ export function createStorage(config: StorageConfig): StorageService {
 
             const expiresAt = new Date(Date.now() + expiration * 1000);
 
-            // Create a signed token
             const tokenData = {
                 key,
                 expiresAt: expiresAt.toISOString(),
@@ -375,29 +468,31 @@ export function createStorage(config: StorageConfig): StorageService {
                 nonce: crypto.randomUUID(),
             };
 
-            // Sign the token (in production, use a proper signing key)
-            const encoder = new TextEncoder();
-            const data = encoder.encode(JSON.stringify(tokenData));
-            const signature = await crypto.subtle.digest("SHA-256", data);
-            const signatureHex = Array.from(new Uint8Array(signature))
-                .map((b) => b.toString(16).padStart(2, "0"))
-                .join("");
+            const payloadPart = bytesToBase64Url(new TextEncoder().encode(JSON.stringify(tokenData)));
+            const signature = await hmacSign(signingSecret, payloadPart);
+            const token = `${payloadPart}.${signature}`;
 
-            // Return signed URL info
-            // In production, this would be a URL to your upload endpoint
             return {
-                url: `/api/upload?token=${signatureHex}`,
+                url: `/api/upload?token=${encodeURIComponent(token)}`,
                 key,
                 expiresAt,
+                token,
                 fields: {
                     key,
                     ...options,
                 },
                 headers: {
-                    "X-Upload-Token": signatureHex,
+                    "X-Upload-Token": token,
                     "X-Upload-Expires": expiresAt.toISOString(),
                 },
             };
+        },
+
+        async verifySignedUploadToken(token: string) {
+            if (!signingSecret) {
+                throw new SignedUrlError("*", "signingSecret is required to verify signed upload tokens");
+            }
+            return verifySignedUploadTokenWithSecret(token, signingSecret);
         },
 
         /**
@@ -482,7 +577,7 @@ export function createStorage(config: StorageConfig): StorageService {
                 await bucket.delete(key);
                 return { success: true };
             } catch (error) {
-                throw new DownloadFailedError(key, error instanceof Error ? error.message : "Delete failed");
+                throw new DeleteFailedError(key, error instanceof Error ? error.message : "Delete failed");
             }
         },
 
@@ -497,7 +592,7 @@ export function createStorage(config: StorageConfig): StorageService {
                 await bucket.delete(keys);
                 return { success: true, deleted: keys.length };
             } catch (error) {
-                throw new DownloadFailedError(
+                throw new DeleteFailedError(
                     keys.join(", "),
                     error instanceof Error ? error.message : "Batch delete failed",
                 );

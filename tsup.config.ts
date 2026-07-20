@@ -1,7 +1,7 @@
 import { defineConfig } from "tsup";
 
 export default defineConfig({
-    entry: ["src/index.ts"],
+    entry: ["src/index.ts", "src/testing/index.ts"],
     format: ["esm", "cjs"],
     dts: true,
     splitting: true,
@@ -13,6 +13,6 @@ export default defineConfig({
     platform: "neutral",
     target: "es2022",
     banner: {
-        js: "/*! Cloudflare Kit v1.0.0 | MIT License | github.com/bhuvaneshcj/cloudflare-kit */",
+        js: "/*! Cloudflare Kit v2.2.0 | MIT License | github.com/bhuvaneshcj/cloudflare-kit */",
     },
 });

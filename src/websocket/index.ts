@@ -262,77 +262,69 @@ export function createWebSocketHandler(options: WebSocketHandlerOptions) {
 }
 
 /**
- * Create a WebSocket handler for use inside Durable Objects
+ * Create a Durable Object WebSocket handler with hibernation support.
  *
- * Uses hibernation API for efficient resource usage when connections are idle.
+ * IMPORTANT: `addEventListener` on the WebSocket does NOT survive DO hibernation.
+ * Your Durable Object class must forward hibernation callbacks to the helpers
+ * returned here (`webSocketMessage`, `webSocketClose`, `webSocketError`).
  *
  * @example
  * ```typescript
- * // Durable Object class
- * export class ChatRoom implements DurableObject {
- *   private wsHandler: ReturnType<typeof createDurableWebSocket>;
- *
- *   constructor(private state: DurableObjectState, private env: Env) {
- *     this.wsHandler = createDurableWebSocket({
- *       onOpen(ws, ctx) {
- *         console.log('Client connected to chat room');
- *         // Broadcast to all connected clients
- *         for (const client of ctx.durableState.getWebSockets()) {
- *           if (client !== ws) {
- *             client.send(JSON.stringify({ type: 'user_joined' }));
- *           }
- *         }
- *       },
- *       onMessage(ws, message, ctx) {
- *         // Broadcast message to all clients
- *         for (const client of ctx.durableState.getWebSockets()) {
- *           client.send(JSON.stringify({
- *             type: 'message',
- *             data: message,
- *             timestamp: Date.now()
- *           }));
- *         }
- *       },
- *       onClose(ws, code, reason, ctx) {
- *         console.log('Client left chat room');
- *       }
+ * export class ChatRoom {
+ *   private ws;
+ *   constructor(state, env) {
+ *     this.ws = createDurableWebSocket({
+ *       onMessage(ws, message, ctx) { console.log(message); },
  *     });
+ *     this.state = state;
+ *     this.env = env;
  *   }
- *
- *   async fetch(request: Request) {
- *     return this.wsHandler.fetch(request, this.env, {
- *       waitUntil: () => {},
- *       passThroughOnException: () => {}
- *     });
+ *   async fetch(request) {
+ *     return this.ws.fetch(request, this.env, this.state);
+ *   }
+ *   async webSocketMessage(ws, message) {
+ *     return this.ws.webSocketMessage(ws, message, this.env, this.state);
+ *   }
+ *   async webSocketClose(ws, code, reason) {
+ *     return this.ws.webSocketClose(ws, code, reason, this.env, this.state);
  *   }
  * }
- *
- * // In your worker
- * app.get('/chat/:roomId', async (ctx) => {
- *   const roomId = ctx.params.roomId;
- *   const id = ctx.env.CHAT_ROOMS.idFromName(roomId);
- *   const room = ctx.env.CHAT_ROOMS.get(id);
- *   return room.fetch(ctx.request);
- * });
  * ```
  */
 export function createDurableWebSocket(options: DurableWebSocketHandlerOptions) {
+    function buildContext(
+        request: Request | undefined,
+        env: Record<string, unknown>,
+        durableState: DurableObjectState,
+        storage?: DurableObjectStorage,
+    ): DurableWebSocketContext {
+        const url = request ? new URL(request.url) : new URL("https://localhost/");
+        return {
+            env,
+            request: request ?? new Request(url),
+            url,
+            state: {},
+            durableState,
+            storage: storage || {
+                get: async () => undefined,
+                put: async () => {},
+                delete: async () => {},
+                list: async () => new Map(),
+            },
+        };
+    }
+
     return {
+        /**
+         * Accept a WebSocket upgrade. Does not attach addEventListener handlers
+         * (those would be lost on hibernation). Wire DO hibernation methods instead.
+         */
         async fetch(
             request: Request,
             env: Record<string, unknown>,
-            _executionContext: ExecutionContext,
-            durableState?: DurableObjectState,
+            durableState: DurableObjectState,
             storage?: DurableObjectStorage,
         ): Promise<Response> {
-            if (!durableState) {
-                return new Response(JSON.stringify({ error: "Durable Object state required" }), {
-                    status: 500,
-                    headers: { "Content-Type": "application/json" },
-                });
-            }
-
-            // Check for WebSocket upgrade header
             const upgradeHeader = request.headers.get("Upgrade");
             if (upgradeHeader !== "websocket") {
                 return new Response(JSON.stringify({ error: "Expected Upgrade: websocket header" }), {
@@ -341,92 +333,77 @@ export function createDurableWebSocket(options: DurableWebSocketHandlerOptions) 
                 });
             }
 
-            try {
-                // Create WebSocket pair
-                const webSocketPair = new WebSocketPair();
-                const [client, server] = Object.values(webSocketPair);
+            const webSocketPair = new WebSocketPair();
+            const [client, server] = Object.values(webSocketPair);
+            const context = buildContext(request, env, durableState, storage);
 
-                // Create Durable Object context
-                const url = new URL(request.url);
-                const context: DurableWebSocketContext = {
-                    env,
-                    request,
-                    url,
-                    state: {},
-                    durableState,
-                    storage: storage || {
-                        get: async () => undefined,
-                        put: async () => {},
-                        delete: async () => {},
-                        list: async () => new Map(),
-                    },
-                };
+            durableState.acceptWebSocket(server);
 
-                // Set up event handlers before accepting
-                // Note: In hibernation mode, these handlers should be set up to survive hibernation
-                if (options.onMessage) {
-                    server.addEventListener("message", async (event: WebSocketMessageEvent) => {
-                        try {
-                            await options.onMessage!(server, event.data, context);
-                        } catch (error) {
-                            console.error("WebSocket message handler error:", error);
-                            if (options.onError) {
-                                await options.onError(server, error as Error, context);
-                            }
-                        }
+            if (options.onOpen) {
+                try {
+                    await options.onOpen(server, context);
+                } catch (error) {
+                    console.error("WebSocket open handler error:", error);
+                    server.close(1011, "Internal server error");
+                    return new Response(JSON.stringify({ error: "WebSocket setup failed" }), {
+                        status: 500,
+                        headers: { "Content-Type": "application/json" },
                     });
                 }
-
-                if (options.onClose) {
-                    server.addEventListener("close", async (event: WebSocketCloseEvent) => {
-                        try {
-                            await options.onClose!(server, event.code, event.reason, context);
-                        } catch (error) {
-                            console.error("WebSocket close handler error:", error);
-                        }
-                    });
-                }
-
-                if (options.onError) {
-                    server.addEventListener("error", async (event: WebSocketErrorEvent) => {
-                        try {
-                            const error = event.error || new Error("WebSocket error");
-                            await options.onError!(server, error, context);
-                        } catch (err) {
-                            console.error("WebSocket error handler error:", err);
-                        }
-                    });
-                }
-
-                // Accept the WebSocket with hibernation support
-                // This allows the Durable Object to hibernate when idle
-                durableState.acceptWebSocket(server);
-
-                // Call onOpen handler after accepting
-                if (options.onOpen) {
-                    try {
-                        await options.onOpen(server, context);
-                    } catch (error) {
-                        console.error("WebSocket open handler error:", error);
-                        server.close(1011, "Internal server error");
-                        return new Response(JSON.stringify({ error: "WebSocket setup failed" }), {
-                            status: 500,
-                            headers: { "Content-Type": "application/json" },
-                        });
-                    }
-                }
-
-                return new Response(null, {
-                    status: 101,
-                    webSocket: client,
-                });
-            } catch (error) {
-                console.error("Durable WebSocket upgrade error:", error);
-                return new Response(JSON.stringify({ error: "WebSocket upgrade failed" }), {
-                    status: 500,
-                    headers: { "Content-Type": "application/json" },
-                });
             }
+
+            return new Response(null, {
+                status: 101,
+                webSocket: client,
+            });
+        },
+
+        async webSocketMessage(
+            ws: WebSocket,
+            message: string | ArrayBuffer,
+            env: Record<string, unknown>,
+            durableState: DurableObjectState,
+            storage?: DurableObjectStorage,
+        ): Promise<void> {
+            if (!options.onMessage) return;
+            const context = buildContext(undefined, env, durableState, storage);
+            try {
+                await options.onMessage(ws, message, context);
+            } catch (error) {
+                console.error("WebSocket message handler error:", error);
+                if (options.onError) {
+                    await options.onError(ws, error as Error, context);
+                }
+            }
+        },
+
+        async webSocketClose(
+            ws: WebSocket,
+            code: number,
+            reason: string,
+            env: Record<string, unknown>,
+            durableState: DurableObjectState,
+            storage?: DurableObjectStorage,
+        ): Promise<void> {
+            if (!options.onClose) return;
+            const context = buildContext(undefined, env, durableState, storage);
+            try {
+                await options.onClose(ws, code, reason, context);
+            } catch (error) {
+                console.error("WebSocket close handler error:", error);
+            }
+        },
+
+        async webSocketError(
+            ws: WebSocket,
+            error: unknown,
+            env: Record<string, unknown>,
+            durableState: DurableObjectState,
+            storage?: DurableObjectStorage,
+        ): Promise<void> {
+            if (!options.onError) return;
+            const context = buildContext(undefined, env, durableState, storage);
+            await options.onError(ws, error instanceof Error ? error : new Error(String(error)), context);
         },
     };
 }

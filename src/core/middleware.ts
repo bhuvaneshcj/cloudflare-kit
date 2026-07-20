@@ -24,10 +24,18 @@ export function corsMiddleware(
         credentials?: boolean;
     } = {},
 ): Middleware {
-    const origin = options.origin || "*";
+    let origin = options.origin || "*";
     const methods = options.methods || "GET, POST, PUT, DELETE, PATCH, OPTIONS";
     const allowHeaders = options.allowHeaders || "Content-Type, Authorization";
-    const credentials = options.credentials;
+    let credentials = options.credentials;
+
+    // Spec-invalid: credentials cannot be used with wildcard origin
+    if (credentials && origin === "*") {
+        console.warn(
+            "[cloudflare-kit] corsMiddleware: credentials:true with origin:'*' is invalid; disabling credentials",
+        );
+        credentials = false;
+    }
 
     return async (context: RequestContext): Promise<Response | void> => {
         if (context.request.method === "OPTIONS") {
@@ -45,7 +53,6 @@ export function corsMiddleware(
             });
         }
 
-        // Store CORS headers to be applied by the app
         context.state.corsHeaders = {
             "Access-Control-Allow-Origin": origin,
             ...(credentials && { "Access-Control-Allow-Credentials": "true" }),
@@ -85,12 +92,35 @@ export function jsonMiddleware(): Middleware {
  * @example
  * ```typescript
  * app.use(securityHeadersMiddleware());
+ * app.use(securityHeadersMiddleware({ csp: "default-src 'self'" }));
  * ```
  */
-export function securityHeadersMiddleware(): Middleware {
-    return async (): Promise<Response | void> => {
-        // Headers are added by wrapping the final response
-        // This is handled internally by the app
+export function securityHeadersMiddleware(
+    options: {
+        csp?: string;
+        hsts?: boolean | string;
+        frameOptions?: string;
+        contentTypeOptions?: string;
+        referrerPolicy?: string;
+    } = {},
+): Middleware {
+    const headers: Record<string, string> = {
+        "X-Content-Type-Options": options.contentTypeOptions ?? "nosniff",
+        "X-Frame-Options": options.frameOptions ?? "DENY",
+        "Referrer-Policy": options.referrerPolicy ?? "strict-origin-when-cross-origin",
+        "Content-Security-Policy": options.csp ?? "default-src 'self'",
+    };
+
+    if (options.hsts !== false) {
+        headers["Strict-Transport-Security"] =
+            typeof options.hsts === "string" ? options.hsts : "max-age=31536000; includeSubDomains";
+    }
+
+    return async (context: RequestContext): Promise<Response | void> => {
+        context.state.securityHeaders = {
+            ...((context.state.securityHeaders as Record<string, string> | undefined) ?? {}),
+            ...headers,
+        };
         return undefined;
     };
 }

@@ -5,6 +5,8 @@
  */
 
 import type { D1Database, D1Result, DatabaseOptions } from "./types";
+import { DatabaseError } from "../errors/index";
+
 export type { D1Database, D1Result, DatabaseOptions };
 
 /**
@@ -14,98 +16,94 @@ export type { D1Database, D1Result, DatabaseOptions };
 function validateIdentifier(name: string): string {
     const VALID_IDENTIFIER = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
     if (!VALID_IDENTIFIER.test(name)) {
-        throw new Error(`Invalid SQL identifier: ${name}`);
+        throw new DatabaseError(`Invalid SQL identifier: ${name}`);
     }
     return name;
 }
 
 /**
- * Create a database service
- *
- * @example
- * ```typescript
- * const database = createDatabase({
- *   binding: env.DB
- * });
- *
- * // Query users
- * const users = await database.query('SELECT * FROM users WHERE active = ?', [true]);
- *
- * // Get single user
- * const user = await database.get('SELECT * FROM users WHERE id = ?', ['123']);
- *
- * // Insert user
- * await database.execute('INSERT INTO users (id, email) VALUES (?, ?)', ['123', 'user@example.com']);
- *
- * // Update user
- * await database.execute('UPDATE users SET email = ? WHERE id = ?', ['new@example.com', '123']);
- *
- * // Delete user
- * await database.execute('DELETE FROM users WHERE id = ?', ['123']);
- * ```
+ * Build a parameterized WHERE clause from a structured record (AND equality only)
  */
-export function createDatabase(options: DatabaseOptions) {
+function buildWhereClause(where: Record<string, unknown>): { clause: string; params: unknown[] } {
+    const keys = Object.keys(where);
+    if (keys.length === 0) {
+        throw new DatabaseError("WHERE clause requires at least one condition");
+    }
+
+    const parts: string[] = [];
+    const params: unknown[] = [];
+
+    for (const key of keys) {
+        validateIdentifier(key);
+        parts.push(`${key} = ?`);
+        params.push(where[key]);
+    }
+
+    return { clause: parts.join(" AND "), params };
+}
+
+export interface DatabaseService {
+    query<T = unknown>(sql: string, params?: unknown[]): Promise<D1Result<T>>;
+    get<T = unknown>(sql: string, params?: unknown[]): Promise<T | null>;
+    execute(sql: string, params?: unknown[]): Promise<D1Result>;
+    insert(table: string, data: Record<string, unknown>): Promise<string | number | null>;
+    update(table: string, data: Record<string, unknown>, where: Record<string, unknown>): Promise<number>;
+    delete(table: string, where: Record<string, unknown>): Promise<number>;
+    batch<T = unknown>(queries: { sql: string; params: unknown[] }[]): Promise<D1Result<T>[]>;
+    getBinding(): D1Database;
+}
+
+/**
+ * Create a database service
+ */
+export function createDatabase(options: DatabaseOptions): DatabaseService {
     const db = options.binding;
 
     return {
-        /**
-         * Execute a query and return all results
-         */
         async query<T = unknown>(sql: string, params: unknown[] = []): Promise<D1Result<T>> {
             try {
                 const statement = db.prepare(sql);
-                const result = await statement.bind(...params).all<T>();
-                return result;
+                return await statement.bind(...params).all<T>();
             } catch (error) {
-                return {
-                    results: [],
-                    success: false,
-                    error: error instanceof Error ? error.message : "Unknown error",
-                };
+                throw new DatabaseError(
+                    error instanceof Error ? error.message : "Database query failed",
+                    sql,
+                    error instanceof Error ? error : undefined,
+                );
             }
         },
 
-        /**
-         * Execute a query and return first result only
-         */
         async get<T = unknown>(sql: string, params: unknown[] = []): Promise<T | null> {
             try {
                 const statement = db.prepare(sql);
-                const result = await statement.bind(...params).first<T>();
-                return result;
-            } catch {
-                return null;
+                return await statement.bind(...params).first<T>();
+            } catch (error) {
+                throw new DatabaseError(
+                    error instanceof Error ? error.message : "Database get failed",
+                    sql,
+                    error instanceof Error ? error : undefined,
+                );
             }
         },
 
-        /**
-         * Execute a write query (INSERT, UPDATE, DELETE)
-         */
         async execute(sql: string, params: unknown[] = []): Promise<D1Result> {
             try {
                 const statement = db.prepare(sql);
-                const result = await statement.bind(...params).run();
-                return result;
+                return await statement.bind(...params).run();
             } catch (error) {
-                return {
-                    results: [],
-                    success: false,
-                    error: error instanceof Error ? error.message : "Unknown error",
-                };
+                throw new DatabaseError(
+                    error instanceof Error ? error.message : "Database execute failed",
+                    sql,
+                    error instanceof Error ? error : undefined,
+                );
             }
         },
 
-        /**
-         * Insert a record and return the ID
-         */
         async insert(table: string, data: Record<string, unknown>): Promise<string | number | null> {
-            // Validate table name
             validateIdentifier(table);
 
             const keys = Object.keys(data);
             const values = Object.values(data);
-
-            // Validate column names
             keys.forEach(validateIdentifier);
 
             const placeholders = keys.map(() => "?").join(", ");
@@ -115,70 +113,48 @@ export function createDatabase(options: DatabaseOptions) {
             return result.meta?.last_row_id ?? null;
         },
 
-        /**
-         * Update records
-         */
-        async update(
-            table: string,
-            data: Record<string, unknown>,
-            whereClause: string,
-            whereParams: unknown[],
-        ): Promise<number> {
-            // Validate table name
+        async update(table: string, data: Record<string, unknown>, where: Record<string, unknown>): Promise<number> {
             validateIdentifier(table);
 
             const keys = Object.keys(data);
             const values = Object.values(data);
-
-            // Validate column names
             keys.forEach(validateIdentifier);
 
+            const { clause, params: whereParams } = buildWhereClause(where);
             const setClause = keys.map((key) => `${key} = ?`).join(", ");
-            const sql = `UPDATE ${table} SET ${setClause} WHERE ${whereClause}`;
+            const sql = `UPDATE ${table} SET ${setClause} WHERE ${clause}`;
 
             const result = await this.execute(sql, [...values, ...whereParams]);
             return result.meta?.changes ?? 0;
         },
 
-        /**
-         * Delete records
-         */
-        async delete(table: string, whereClause: string, whereParams: unknown[]): Promise<number> {
-            // Validate table name
+        async delete(table: string, where: Record<string, unknown>): Promise<number> {
             validateIdentifier(table);
 
-            const sql = `DELETE FROM ${table} WHERE ${whereClause}`;
+            const { clause, params: whereParams } = buildWhereClause(where);
+            const sql = `DELETE FROM ${table} WHERE ${clause}`;
 
             const result = await this.execute(sql, whereParams);
             return result.meta?.changes ?? 0;
         },
 
-        /**
-         * Run multiple queries in a batch
-         */
         async batch<T = unknown>(queries: { sql: string; params: unknown[] }[]): Promise<D1Result<T>[]> {
             try {
                 const statements = queries.map((q) => db.prepare(q.sql).bind(...q.params));
-                const results = await db.batch<T>(statements);
-                return results;
+                return await db.batch<T>(statements);
             } catch (error) {
-                return [
-                    {
-                        results: [],
-                        success: false,
-                        error: error instanceof Error ? error.message : "Unknown error",
-                    },
-                ];
+                throw new DatabaseError(
+                    error instanceof Error ? error.message : "Database batch failed",
+                    undefined,
+                    error instanceof Error ? error : undefined,
+                );
             }
         },
 
-        /**
-         * Get the raw D1 binding for advanced usage
-         */
         getBinding(): D1Database {
             return db;
         },
     };
 }
 
-export type DatabaseService = ReturnType<typeof createDatabase>;
+export { buildWhereClause, validateIdentifier };

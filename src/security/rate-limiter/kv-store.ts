@@ -1,7 +1,11 @@
 /**
  * KV-based Rate Limit Store
  *
- * Production-ready distributed rate limiting using Cloudflare KV.
+ * Distributed rate limiting using Cloudflare KV.
+ *
+ * IMPORTANT: KV get-modify-put is NOT strongly atomic. Concurrent requests can
+ * still race. For strong consistency use a Durable Object counter. This store
+ * is best-effort for multi-isolate deployments.
  */
 
 import type { RateLimitStore, RateLimitData } from "./types";
@@ -25,22 +29,8 @@ export interface KVRateLimitConfig {
 /**
  * Create a KV-based rate limit store for production use
  *
- * This store provides distributed rate limiting across all Cloudflare
- * Worker instances. Use this in production environments.
- *
- * @example
- * ```typescript
- * const store = createKVRateLimitStore({
- *   binding: env.RATE_LIMIT_KV,
- *   prefix: 'api:'
- * });
- *
- * const limiter = createRateLimiter({
- *   store,
- *   maxRequests: 100,
- *   windowSeconds: 60
- * });
- * ```
+ * Provides best-effort distributed rate limiting across Worker isolates.
+ * Not strongly atomic — prefer Durable Objects when exact limits matter.
  */
 export function createKVRateLimitStore(config: KVRateLimitConfig): RateLimitStore {
     const prefix = config.prefix ?? "ratelimit:";
@@ -55,10 +45,8 @@ export function createKVRateLimitStore(config: KVRateLimitConfig): RateLimitStor
             const data = await kv.get(getKey(key), "json");
             if (!data) return null;
 
-            // Validate the data structure
             const rateData = data as RateLimitData;
             if (Date.now() > rateData.resetAt) {
-                // Data expired, clean it up
                 await kv.delete(getKey(key));
                 return null;
             }
@@ -75,19 +63,15 @@ export function createKVRateLimitStore(config: KVRateLimitConfig): RateLimitStor
         async increment(key: string): Promise<RateLimitData | null> {
             const fullKey = getKey(key);
 
-            // Get current value
+            // Best-effort read-modify-write (not atomic across isolates)
             const current = (await kv.get(fullKey, "json")) as RateLimitData | null;
             if (!current) return null;
 
-            // Check if expired
             if (Date.now() > current.resetAt) {
                 await kv.delete(fullKey);
                 return null;
             }
 
-            // Increment and update
-            // Note: This is not atomic. For true atomic increments,
-            // consider using D1 or a counter service
             current.count++;
             const ttl = Math.ceil((current.resetAt - Date.now()) / 1000);
 

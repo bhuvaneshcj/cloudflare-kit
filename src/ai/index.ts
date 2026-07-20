@@ -128,37 +128,20 @@ export function createAI(options: AIOptions): AIService {
     const gateway = options.gateway;
 
     /**
-     * Get the model URL with optional gateway prefix
-     */
-    function getModelUrl(model: string): string {
-        if (gateway) {
-            // Use AI Gateway URL format
-            return `https://gateway.ai.cloudflare.com/v1/${gateway.id}/${model}`;
-        }
-        return model;
-    }
-
-    /**
-     * Run any model with custom inputs
+     * Run any model with custom inputs.
+     * Always passes the model id to binding.run(); gateway is metadata only
+     * (Workers AI Gateway is configured on the binding / wrangler, not via URL).
      */
     async function run<T>(model: string, inputs: unknown, runOptions?: AiRunOptions): Promise<T> {
-        const modelUrl = getModelUrl(model);
-
-        // Merge options
         const mergedOptions: AiRunOptions = {
             ...runOptions,
         };
 
         if (gateway?.cacheKey) {
-            mergedOptions.cacheKey = gateway.cacheKey;
+            mergedOptions.cacheKey = gateway?.cacheKey ?? `${gateway.id}:${model}`;
         }
 
-        try {
-            return await binding.run<T>(modelUrl, inputs, mergedOptions);
-        } catch (error) {
-            console.error("AI run error:", error);
-            throw error;
-        }
+        return await binding.run<T>(model, inputs, mergedOptions);
     }
 
     /**
@@ -169,13 +152,8 @@ export function createAI(options: AIOptions): AIService {
             messages: [{ role: "user", content: prompt }],
         };
 
-        try {
-            const result = await run<TextGenerationResponse>(model, inputs);
-            return result.response || "";
-        } catch (error) {
-            console.error("AI text generation error:", error);
-            return "";
-        }
+        const result = await run<TextGenerationResponse>(model, inputs);
+        return result.response || "";
     }
 
     /**
@@ -183,16 +161,25 @@ export function createAI(options: AIOptions): AIService {
      */
     async function embed(textInput: string | string[], model = "@cf/baai/bge-small-en-v1.5"): Promise<number[][]> {
         const texts = Array.isArray(textInput) ? textInput : [textInput];
-
         const inputs = { text: texts };
 
-        try {
-            const result = await run<EmbeddingResponse>(model, inputs);
-            return result.data.map((d) => d.embedding);
-        } catch (error) {
-            console.error("AI embedding error:", error);
-            return texts.map(() => []);
+        const result = await run<EmbeddingResponse | { data: number[][] } | number[][]>(model, inputs);
+
+        // Normalize Workers AI embedding shapes
+        if (Array.isArray(result)) {
+            return result as number[][];
         }
+        if (result && typeof result === "object" && "data" in result) {
+            const data = (result as EmbeddingResponse | { data: number[][] }).data;
+            if (Array.isArray(data) && data.length > 0 && Array.isArray(data[0])) {
+                return data as number[][];
+            }
+            if (Array.isArray(data) && data.length > 0 && typeof data[0] === "object" && data[0] !== null && "embedding" in (data[0] as object)) {
+                return (data as Array<{ embedding: number[] }>).map((d) => d.embedding);
+            }
+        }
+
+        throw new Error("Unexpected embedding response shape from Workers AI");
     }
 
     /**
@@ -204,18 +191,7 @@ export function createAI(options: AIOptions): AIService {
             stream: true,
         };
 
-        try {
-            const result = await run<ReadableStream>(model, inputs, { stream: true });
-            return result;
-        } catch (error) {
-            console.error("AI streaming error:", error);
-            // Return empty stream on error
-            return new ReadableStream({
-                start(controller) {
-                    controller.close();
-                },
-            });
-        }
+        return await run<ReadableStream>(model, inputs, { stream: true });
     }
 
     /**
@@ -226,13 +202,8 @@ export function createAI(options: AIOptions): AIService {
             image: [...new Uint8Array(imageData)],
         };
 
-        try {
-            const result = await run<ImageToTextResponse>(model, inputs);
-            return result.description || result.text || result.caption || "";
-        } catch (error) {
-            console.error("AI image to text error:", error);
-            return "";
-        }
+        const result = await run<ImageToTextResponse>(model, inputs);
+        return result.description || result.text || result.caption || "";
     }
 
     return {

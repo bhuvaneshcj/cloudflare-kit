@@ -160,8 +160,8 @@ export class ValidationError extends CloudflareKitError {
  * Authentication and authorization errors
  */
 export class AuthError extends CloudflareKitError {
-    constructor(message: string, code: string = "AUTH_ERROR") {
-        super(message, code, 401, true);
+    constructor(message: string, code: string = "AUTH_ERROR", statusCode: number = 401) {
+        super(message, code, statusCode, true);
     }
 
     static invalidToken(message = "Invalid or expired token"): AuthError {
@@ -177,7 +177,7 @@ export class AuthError extends CloudflareKitError {
     }
 
     static insufficientPermissions(message = "Insufficient permissions"): AuthError {
-        return new AuthError(message, "FORBIDDEN");
+        return new AuthError(message, "FORBIDDEN", 403);
     }
 
     static invalidCredentials(message = "Invalid credentials"): AuthError {

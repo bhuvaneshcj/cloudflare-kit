@@ -5,6 +5,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] - 2026-07-20
+
+### Fixed (critical)
+
+- **Router**: path params (`:id`) and wildcard splat (`params["*"]`) now match correctly
+- **Validation**: `minLength` / `email` / `url` / `min` / `max` chaining actually enforces rules
+- **Auth**: added `requireAuth`; multi-middleware route registration (`app.post(path, mw, handler)`)
+- **Storage**: HMAC-signed upload tokens (requires `signingSecret`); forgeable SHA-256 stubs removed
+- **securityHeadersMiddleware**: now sets real security headers on responses
+- **JWT**: UTF-8-safe encoding; reject tokens without `exp`; optional `issuer` / `audience`
+- **Database**: `update`/`delete` take structured `where` objects (no raw SQL injection); failures throw `DatabaseError`
+- **OAuth**: `handleCallback(code, codeVerifier, state, expectedState)` validates CSRF state when expected is provided
+- **WebSocket Durable helper**: hibernation-safe API (`webSocketMessage` / `webSocketClose` forwarding)
+- **Testing**: absolute URLs in `mockRequest`; `createTestApp` body reuse fixed
+
+### Added
+
+- `requireAuth`, `createRateLimitMiddleware`, `verifySignedUploadToken`, `logger.requestLogger()`
+- `AppOptions.plugins` / `onError` wired into `createApp`
+- `cloudflare-kit/testing` subpath export and CLI `bin`
+- Vitest test suite (`npm test`)
+
+### Changed
+
+- Version banner / package version → `2.2.0`
+- In-memory rate limiter capped + returns `Retry-After` / rate-limit headers
+- KV rate store documents best-effort (not strongly atomic); Durable Objects required for exact limits
+- Email templates HTML-escape interpolation; send failures throw
+- AI helpers throw on failure; model id passed to `binding.run` (not gateway URL)
+
+### Corrected documentation (honesty)
+
+Earlier 2.1.0 notes incorrectly claimed KV mutex locks, cache-tag locks, and an LRU route cache.
+Those were never implemented. This release documents real behavior instead.
+
 ## [2.1.0] - 2026-03-01
 
 ### Security Fixes (CRITICAL)
@@ -20,7 +55,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Added minimum secret length validation (32 characters)
 - Prevents weak secrets that could be brute-forced
-- Throws `ConfigurationError` if secret is too short
+- Throws `ConfigError` if secret is too short
 
 #### OAuth PKCE Implementation
 
@@ -29,19 +64,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `handleCallback()` requires `codeVerifier` parameter
 - Prevents authorization code interception attacks
 - New helper functions: `generateCodeVerifier()`, `generateCodeChallenge()`
-
-#### Rate Limiter Race Condition Fix
-
-- Added mutex-like locking using KV metadata to prevent race conditions
-- `acquireLock()` and `releaseLock()` functions ensure atomic updates
-- Prevents concurrent requests from bypassing rate limits
-- Lock automatically expires after 10 seconds to prevent deadlocks
-
-#### Cache Tag Race Condition Fix
-
-- Added locking mechanism for cache tag operations
-- `invalidateByTag()` now uses atomic locks to prevent race conditions
-- Prevents cache corruption during concurrent tag invalidations
 
 #### WebSocket Connection Limits
 
@@ -56,14 +78,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Returns generic "Internal Server Error" to prevent information disclosure
 - Maintains detailed logging for debugging
 
-### Performance Improvements
+### Note on retracted 2.1.0 claims
 
-#### Router Optimization
-
-- Route cache with 1000-entry LRU for O(1) repeated lookups
-- Pre-compiled regex patterns for parameter extraction
-- Wildcard and exact-match route prioritization
-- ~50-70% faster route matching for frequently accessed paths
+The following items were listed in earlier 2.1.0 changelog text but were **not** present in the published code: KV rate-limit mutex, cache-tag locks, and LRU route cache. See 2.2.0 for accurate behavior.
 
 ### New Features
 
@@ -83,8 +100,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `OAuthClient.getAuthUrl()` now returns `Promise<AuthUrlResult>` instead of `string`
 - `AuthUrlResult` includes both `url` and `codeVerifier`
 - `OAuthClient.handleCallback()` now requires `codeVerifier` parameter
-- Rate limiter now uses atomic locking (internal implementation change)
-- Cache tag operations now use locking (internal implementation change)
 
 ### Migration Guide
 
@@ -96,8 +111,8 @@ const url = await oauth.getAuthUrl(state);
 const result = await oauth.handleCallback(code, state);
 
 // After
-const { url, codeVerifier } = await oauth.getAuthUrl(state);
-const result = await oauth.handleCallback(code, state, codeVerifier);
+const { url, codeVerifier, state: oauthState } = await oauth.getAuthUrl(state);
+const result = await oauth.handleCallback(code, codeVerifier, callbackState, oauthState);
 ```
 
 Store the `codeVerifier` in your session and pass it to `handleCallback()` when the user returns.

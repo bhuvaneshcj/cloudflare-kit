@@ -7,6 +7,9 @@
  */
 
 import type { Middleware, RequestContext, AppOptions, Handler } from "./types";
+import { handleError } from "../errors/index";
+import { PluginRegistry } from "../plugins/registry";
+import type { Plugin, PluginContext } from "../plugins/types";
 
 /**
  * Extended request context with routing information
@@ -30,25 +33,16 @@ interface Route {
 }
 
 /**
- * Route group configuration
- */
-interface RouteGroup {
-    prefix: string;
-    middleware: Middleware[];
-    routes: Route[];
-}
-
-/**
  * Router instance for route groups
  */
 export interface Router {
-    get(path: string, handler: Handler): this;
-    post(path: string, handler: Handler): this;
-    put(path: string, handler: Handler): this;
-    delete(path: string, handler: Handler): this;
-    patch(path: string, handler: Handler): this;
-    head(path: string, handler: Handler): this;
-    options(path: string, handler: Handler): this;
+    get(path: string, ...handlers: Array<Middleware | Handler>): this;
+    post(path: string, ...handlers: Array<Middleware | Handler>): this;
+    put(path: string, ...handlers: Array<Middleware | Handler>): this;
+    delete(path: string, ...handlers: Array<Middleware | Handler>): this;
+    patch(path: string, ...handlers: Array<Middleware | Handler>): this;
+    head(path: string, ...handlers: Array<Middleware | Handler>): this;
+    options(path: string, ...handlers: Array<Middleware | Handler>): this;
     use(middleware: Middleware): this;
 }
 
@@ -57,13 +51,13 @@ export interface Router {
  */
 export interface App {
     use(middleware: Middleware): this;
-    get(path: string, handler: Handler): this;
-    post(path: string, handler: Handler): this;
-    put(path: string, handler: Handler): this;
-    delete(path: string, handler: Handler): this;
-    patch(path: string, handler: Handler): this;
-    head(path: string, handler: Handler): this;
-    options(path: string, handler: Handler): this;
+    get(path: string, ...handlers: Array<Middleware | Handler>): this;
+    post(path: string, ...handlers: Array<Middleware | Handler>): this;
+    put(path: string, ...handlers: Array<Middleware | Handler>): this;
+    delete(path: string, ...handlers: Array<Middleware | Handler>): this;
+    patch(path: string, ...handlers: Array<Middleware | Handler>): this;
+    head(path: string, ...handlers: Array<Middleware | Handler>): this;
+    options(path: string, ...handlers: Array<Middleware | Handler>): this;
     group(prefix: string, callback: (router: Router) => void): this;
     fetch(request: Request, env: Record<string, unknown>, executionContext: ExecutionContext): Promise<Response>;
 }
@@ -71,28 +65,26 @@ export interface App {
 /**
  * Convert a route path pattern to a RegExp and extract parameter names
  */
-function parseRoutePattern(path: string): { pattern: RegExp; paramNames: string[]; isWildcard: boolean } {
+export function parseRoutePattern(path: string): { pattern: RegExp; paramNames: string[]; isWildcard: boolean } {
     const paramNames: string[] = [];
     let isWildcard = false;
 
-    // Handle wildcard routes like /static/*
     if (path.endsWith("/*")) {
         isWildcard = true;
         path = path.slice(0, -2);
     }
 
-    // Escape special regex characters except for our parameter syntax
-    let patternString = path.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\\:([a-zA-Z_][a-zA-Z0-9_]*)/g, (_, name) => {
+    // Escape regex specials except ":" used for params
+    let patternString = path.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/:([a-zA-Z_][a-zA-Z0-9_]*)/g, (_, name) => {
         paramNames.push(name);
         return "([^/]+)";
     });
 
-    // For wildcards, allow anything after the path
+    // Capturing wildcard group for params["*"]
     if (isWildcard) {
-        patternString += "(?:/.*)?";
+        patternString += "(?:/(.*))?";
     }
 
-    // Anchor the pattern to match the entire path
     patternString = `^${patternString}$`;
 
     return {
@@ -114,16 +106,32 @@ function parseQueryString(url: URL): Record<string, string> {
 }
 
 /**
- * Apply CORS headers to a response if they exist
+ * Merge response headers from CORS / security middleware state
  */
-function applyCorsHeaders(response: Response, corsHeaders: Record<string, string> | undefined): Response {
-    if (!corsHeaders) {
+function applyResponseHeaders(response: Response, context: RequestContext): Response {
+    const corsHeaders = context.state.corsHeaders as Record<string, string> | undefined;
+    const securityHeaders = context.state.securityHeaders as Record<string, string> | undefined;
+    const rateLimitHeaders = context.state.rateLimitHeaders as Record<string, string> | undefined;
+
+    const logFn = context.state._logRequest as ((status: number) => void) | undefined;
+    if (typeof logFn === "function") {
+        try {
+            logFn(response.status);
+        } catch {
+            // ignore logging errors
+        }
+    }
+
+    if (!corsHeaders && !securityHeaders && !rateLimitHeaders) {
         return response;
     }
 
     const newHeaders = new Headers(response.headers);
-    for (const [key, value] of Object.entries(corsHeaders)) {
-        newHeaders.set(key, value);
+    for (const headers of [corsHeaders, securityHeaders, rateLimitHeaders]) {
+        if (!headers) continue;
+        for (const [key, value] of Object.entries(headers)) {
+            newHeaders.set(key, value);
+        }
     }
 
     return new Response(response.body, {
@@ -134,51 +142,76 @@ function applyCorsHeaders(response: Response, corsHeaders: Record<string, string
 }
 
 /**
+ * Split route args into middleware + final handler
+ */
+function splitHandlers(handlers: Array<Middleware | Handler>): { middleware: Middleware[]; handler: Handler } {
+    if (handlers.length === 0) {
+        throw new Error("Route requires at least one handler");
+    }
+    const handler = handlers[handlers.length - 1] as Handler;
+    const middleware = handlers.slice(0, -1) as Middleware[];
+    return { middleware, handler };
+}
+
+/**
  * Create a new Cloudflare Worker application with dynamic routing
- *
- * @example
- * ```typescript
- * const app = createApp({
- *   database: createDatabase({ binding: env.DB }),
- *   cache: createCache({ binding: env.CACHE })
- * });
- *
- * // Global middleware
- * app.use(loggingMiddleware);
- * app.use(corsMiddleware({ origin: '*' }));
- *
- * // Static routes
- * app.get('/users', getUsersHandler);
- * app.post('/users', createUserHandler);
- *
- * // Dynamic routes with parameters
- * app.get('/users/:id', getUserByIdHandler);
- * app.get('/posts/:slug/comments/:commentId', getCommentHandler);
- *
- * // Wildcard routes
- * app.get('/static/*', serveStaticHandler);
- *
- * // Route grouping with scoped middleware
- * app.group('/api/v1', (router) => {
- *   router.use(authMiddleware);
- *   router.get('/users', apiGetUsersHandler);
- *   router.post('/users', apiCreateUserHandler);
- *   router.get('/users/:id', apiGetUserHandler);
- * });
- *
- * export default app;
- * ```
  */
 export function createApp(options: AppOptions = {}): App {
     const middlewares: Middleware[] = [];
     const routes: Route[] = [];
-    const groups: RouteGroup[] = [];
+    const registry = new PluginRegistry();
+    let pluginsInstalled = false;
 
-    /**
-     * Register a route
-     */
-    function addRoute(method: string, path: string, handler: Handler, groupMiddleware: Middleware[] = []): void {
+    // Register plugins from options
+    if (options.plugins) {
+        for (const plugin of options.plugins) {
+            registry.register(plugin);
+        }
+    }
+
+    async function ensurePluginsInstalled(env: Record<string, unknown>): Promise<void> {
+        if (pluginsInstalled || registry.names.length === 0) {
+            pluginsInstalled = true;
+            return;
+        }
+
+        const noopLogger = {
+            debug: () => undefined,
+            info: () => undefined,
+            warn: () => undefined,
+            error: () => undefined,
+        };
+
+        const pluginApp = {
+            name: "cloudflare-kit",
+            version: "2.2.0",
+            config: {},
+            logger: noopLogger,
+            on: registry.on.bind(registry),
+            emit: registry.emit.bind(registry),
+            getProvider: <T>(_name: string): T | undefined => undefined,
+            setProvider: <T>(_name: string, _provider: T): void => undefined,
+        };
+
+        const context: PluginContext = {
+            app: pluginApp,
+            config: {},
+            logger: noopLogger,
+            env,
+        };
+
+        await registry.installAll(context);
+        pluginsInstalled = true;
+    }
+
+    function addRoute(
+        method: string,
+        path: string,
+        handlers: Array<Middleware | Handler>,
+        groupMiddleware: Middleware[] = [],
+    ): void {
         const { pattern, paramNames, isWildcard } = parseRoutePattern(path);
+        const { middleware: routeMiddleware, handler } = splitHandlers(handlers);
 
         routes.push({
             method: method.toUpperCase(),
@@ -187,23 +220,15 @@ export function createApp(options: AppOptions = {}): App {
             paramNames,
             handler,
             isWildcard,
-            middleware: [...groupMiddleware],
+            middleware: [...groupMiddleware, ...routeMiddleware],
         });
+
+        void registry.emit("route:register", method.toUpperCase(), path);
     }
 
-    /**
-     * Find a matching route for the given method and path
-     */
     function findRoute(method: string, pathname: string): { route: Route; params: Record<string, string> } | null {
         const upperMethod = method.toUpperCase();
 
-        // First try exact match (backward compatibility)
-        const exactRoute = routes.find((r) => r.method === upperMethod && r.path === pathname);
-        if (exactRoute) {
-            return { route: exactRoute, params: {} };
-        }
-
-        // Then try pattern matching
         for (const route of routes) {
             if (route.method !== upperMethod) continue;
 
@@ -214,9 +239,14 @@ export function createApp(options: AppOptions = {}): App {
                     params[name] = match[index + 1] || "";
                 });
 
-                // For wildcard routes, capture the wildcard part
-                if (route.isWildcard && match[route.paramNames.length + 1]) {
-                    params["*"] = match[route.paramNames.length + 1].replace(/^\//, "");
+                if (route.isWildcard) {
+                    const splatIndex = route.paramNames.length + 1;
+                    const splat = match[splatIndex];
+                    if (splat !== undefined) {
+                        params["*"] = splat;
+                    } else {
+                        params["*"] = "";
+                    }
                 }
 
                 return { route, params };
@@ -226,29 +256,19 @@ export function createApp(options: AppOptions = {}): App {
         return null;
     }
 
-    /**
-     * Check if a path exists with any method (for 405 detection)
-     */
     function findPathWithoutMethod(pathname: string): string[] {
         const methods: string[] = [];
 
         for (const route of routes) {
-            if (route.path === pathname) {
+            const match = pathname.match(route.pattern);
+            if (match) {
                 methods.push(route.method);
-            } else {
-                const match = pathname.match(route.pattern);
-                if (match) {
-                    methods.push(route.method);
-                }
             }
         }
 
         return [...new Set(methods)];
     }
 
-    /**
-     * Create a router for group configuration
-     */
     function createRouter(groupPrefix: string, groupMiddleware: Middleware[]): Router {
         const routerMiddleware: Middleware[] = [];
 
@@ -257,40 +277,37 @@ export function createApp(options: AppOptions = {}): App {
                 routerMiddleware.push(middleware);
                 return this;
             },
-            get(path: string, handler: Handler) {
-                addRoute("GET", groupPrefix + path, handler, [...groupMiddleware, ...routerMiddleware]);
+            get(path: string, ...handlers: Array<Middleware | Handler>) {
+                addRoute("GET", groupPrefix + path, handlers, [...groupMiddleware, ...routerMiddleware]);
                 return this;
             },
-            post(path: string, handler: Handler) {
-                addRoute("POST", groupPrefix + path, handler, [...groupMiddleware, ...routerMiddleware]);
+            post(path: string, ...handlers: Array<Middleware | Handler>) {
+                addRoute("POST", groupPrefix + path, handlers, [...groupMiddleware, ...routerMiddleware]);
                 return this;
             },
-            put(path: string, handler: Handler) {
-                addRoute("PUT", groupPrefix + path, handler, [...groupMiddleware, ...routerMiddleware]);
+            put(path: string, ...handlers: Array<Middleware | Handler>) {
+                addRoute("PUT", groupPrefix + path, handlers, [...groupMiddleware, ...routerMiddleware]);
                 return this;
             },
-            delete(path: string, handler: Handler) {
-                addRoute("DELETE", groupPrefix + path, handler, [...groupMiddleware, ...routerMiddleware]);
+            delete(path: string, ...handlers: Array<Middleware | Handler>) {
+                addRoute("DELETE", groupPrefix + path, handlers, [...groupMiddleware, ...routerMiddleware]);
                 return this;
             },
-            patch(path: string, handler: Handler) {
-                addRoute("PATCH", groupPrefix + path, handler, [...groupMiddleware, ...routerMiddleware]);
+            patch(path: string, ...handlers: Array<Middleware | Handler>) {
+                addRoute("PATCH", groupPrefix + path, handlers, [...groupMiddleware, ...routerMiddleware]);
                 return this;
             },
-            head(path: string, handler: Handler) {
-                addRoute("HEAD", groupPrefix + path, handler, [...groupMiddleware, ...routerMiddleware]);
+            head(path: string, ...handlers: Array<Middleware | Handler>) {
+                addRoute("HEAD", groupPrefix + path, handlers, [...groupMiddleware, ...routerMiddleware]);
                 return this;
             },
-            options(path: string, handler: Handler) {
-                addRoute("OPTIONS", groupPrefix + path, handler, [...groupMiddleware, ...routerMiddleware]);
+            options(path: string, ...handlers: Array<Middleware | Handler>) {
+                addRoute("OPTIONS", groupPrefix + path, handlers, [...groupMiddleware, ...routerMiddleware]);
                 return this;
             },
         };
     }
 
-    /**
-     * Execute middleware chain
-     */
     async function executeMiddlewares(
         middlewaresToRun: Middleware[],
         context: RouterContext,
@@ -305,103 +322,66 @@ export function createApp(options: AppOptions = {}): App {
     }
 
     const app: App = {
-        /**
-         * Add global middleware to the application
-         */
         use(middleware: Middleware) {
             middlewares.push(middleware);
+            void registry.emit("middleware:register", middleware.name || "anonymous");
             return this;
         },
 
-        /**
-         * Register a GET route
-         */
-        get(path: string, handler: Handler) {
-            addRoute("GET", path, handler);
+        get(path: string, ...handlers: Array<Middleware | Handler>) {
+            addRoute("GET", path, handlers);
             return this;
         },
 
-        /**
-         * Register a POST route
-         */
-        post(path: string, handler: Handler) {
-            addRoute("POST", path, handler);
+        post(path: string, ...handlers: Array<Middleware | Handler>) {
+            addRoute("POST", path, handlers);
             return this;
         },
 
-        /**
-         * Register a PUT route
-         */
-        put(path: string, handler: Handler) {
-            addRoute("PUT", path, handler);
+        put(path: string, ...handlers: Array<Middleware | Handler>) {
+            addRoute("PUT", path, handlers);
             return this;
         },
 
-        /**
-         * Register a DELETE route
-         */
-        delete(path: string, handler: Handler) {
-            addRoute("DELETE", path, handler);
+        delete(path: string, ...handlers: Array<Middleware | Handler>) {
+            addRoute("DELETE", path, handlers);
             return this;
         },
 
-        /**
-         * Register a PATCH route
-         */
-        patch(path: string, handler: Handler) {
-            addRoute("PATCH", path, handler);
+        patch(path: string, ...handlers: Array<Middleware | Handler>) {
+            addRoute("PATCH", path, handlers);
             return this;
         },
 
-        /**
-         * Register a HEAD route
-         */
-        head(path: string, handler: Handler) {
-            addRoute("HEAD", path, handler);
+        head(path: string, ...handlers: Array<Middleware | Handler>) {
+            addRoute("HEAD", path, handlers);
             return this;
         },
 
-        /**
-         * Register an OPTIONS route
-         */
-        options(path: string, handler: Handler) {
-            addRoute("OPTIONS", path, handler);
+        options(path: string, ...handlers: Array<Middleware | Handler>) {
+            addRoute("OPTIONS", path, handlers);
             return this;
         },
 
-        /**
-         * Create a route group with optional prefix and middleware
-         */
         group(prefix: string, callback: (router: Router) => void) {
-            const group: RouteGroup = {
-                prefix,
-                middleware: [],
-                routes: [],
-            };
-
-            const router = createRouter(prefix, group.middleware);
+            const router = createRouter(prefix, []);
             callback(router);
-
-            groups.push(group);
             return this;
         },
 
-        /**
-         * Handle incoming requests (called by Cloudflare Workers)
-         */
         async fetch(
             request: Request,
             env: Record<string, unknown>,
             executionContext: ExecutionContext,
         ): Promise<Response> {
+            await ensurePluginsInstalled(env);
+
             const url = new URL(request.url);
             const method = request.method;
             const pathname = url.pathname;
 
-            // Find matching route
             const match = findRoute(method, pathname);
 
-            // Check for 405 Method Not Allowed
             if (!match) {
                 const availableMethods = findPathWithoutMethod(pathname);
                 if (availableMethods.length > 0) {
@@ -421,10 +401,8 @@ export function createApp(options: AppOptions = {}): App {
                 }
             }
 
-            // Parse query string
             const query = parseQueryString(url);
 
-            // Build the router context
             const context: RouterContext = {
                 request,
                 url,
@@ -437,46 +415,49 @@ export function createApp(options: AppOptions = {}): App {
             };
 
             try {
-                // Run global middlewares
+                await registry.emit("request:start", context);
+
                 const middlewareResult = await executeMiddlewares(middlewares, context);
                 if (middlewareResult) {
-                    return applyCorsHeaders(middlewareResult, context.state.corsHeaders as Record<string, string>);
+                    const response = applyResponseHeaders(middlewareResult, context);
+                    await registry.emit("request:end", context, response);
+                    return response;
                 }
 
-                // Execute route handler if found
                 if (match) {
-                    // Run route-specific middlewares (group middlewares)
                     const routeMiddlewareResult = await executeMiddlewares(match.route.middleware, context);
                     if (routeMiddlewareResult) {
-                        return applyCorsHeaders(
-                            routeMiddlewareResult,
-                            context.state.corsHeaders as Record<string, string>,
-                        );
+                        const response = applyResponseHeaders(routeMiddlewareResult, context);
+                        await registry.emit("request:end", context, response);
+                        return response;
                     }
 
-                    // Run the handler
-                    const response = await match.route.handler(context);
-                    return applyCorsHeaders(response, context.state.corsHeaders as Record<string, string>);
+                    const response = applyResponseHeaders(await match.route.handler(context), context);
+                    await registry.emit("request:end", context, response);
+                    return response;
                 }
 
-                // No route found - return 404
-                return new Response(JSON.stringify({ error: "Not Found", path: pathname, method }), {
+                const notFound = new Response(JSON.stringify({ error: "Not Found", path: pathname, method }), {
                     status: 404,
                     headers: { "Content-Type": "application/json" },
                 });
+                const response = applyResponseHeaders(notFound, context);
+                await registry.emit("request:end", context, response);
+                return response;
             } catch (error) {
                 console.error("Handler error:", error);
-                // NEVER expose error details in production - security risk
-                return new Response(
-                    JSON.stringify({
-                        error: "Internal Server Error",
-                        requestId: crypto.randomUUID(), // For debugging without exposing internals
-                    }),
-                    {
-                        status: 500,
-                        headers: { "Content-Type": "application/json" },
-                    },
+                await registry.emit(
+                    "request:error",
+                    context,
+                    error instanceof Error ? error : new Error(String(error)),
                 );
+
+                if (options.onError) {
+                    const custom = await options.onError(error, context);
+                    return applyResponseHeaders(custom, context);
+                }
+
+                return applyResponseHeaders(handleError(error), context);
             }
         },
     };
@@ -484,5 +465,5 @@ export function createApp(options: AppOptions = {}): App {
     return app;
 }
 
-// Re-export types
 export type { Middleware, RequestContext, AppOptions, Handler } from "./types";
+export type { Plugin };

@@ -251,9 +251,21 @@ export function createOAuth(options: OAuthOptions) {
      *
      * @param code - The authorization code from the callback
      * @param codeVerifier - The PKCE code verifier from getAuthUrl()
-     * @param _state - The state parameter for CSRF validation (optional)
+     * @param state - The state returned by the provider callback
+     * @param expectedState - The state you stored from getAuthUrl(); when provided, must match `state`
      */
-    async function handleCallback(code: string, codeVerifier: string, _state?: string): Promise<OAuthResult> {
+    async function handleCallback(
+        code: string,
+        codeVerifier: string,
+        state?: string,
+        expectedState?: string,
+    ): Promise<OAuthResult> {
+        if (expectedState !== undefined) {
+            if (!state || state !== expectedState) {
+                throw new Error("OAuth state mismatch — possible CSRF attack");
+            }
+        }
+
         // Exchange code for token with PKCE
         const tokenResponse = await fetch(config.tokenUrl, {
             method: "POST",

@@ -11,6 +11,8 @@ export interface RateLimitOptions {
     maxRequests: number;
     windowSeconds: number;
     keyGenerator?: (request: Request) => string;
+    /** Max keys retained in memory (default 10000) */
+    maxKeys?: number;
 }
 
 export interface ValidationSchema {
@@ -23,24 +25,33 @@ export interface ValidationSchema {
     };
 }
 
+const MAX_KEYS_DEFAULT = 10_000;
+
 /**
  * Create rate limiting middleware
  *
  * ⚠️ WARNING: This rate limiter uses an in-memory Map which has limitations:
- * - It does not share state across Cloudflare Worker isolates (each request may hit a different isolate)
- * - The map grows unbounded and resets on cold starts
- * - For production use, consider using KV or D1 for distributed rate limiting
- *
- * @example
- * ```typescript
- * app.use(rateLimit({
- *   maxRequests: 100,
- *   windowSeconds: 60
- * }));
- * ```
+ * - It does not share state across Cloudflare Worker isolates
+ * - The map is capped (evicts expired / oldest entries) but resets on cold starts
+ * - For production distributed limiting, use createRateLimiter with KV or a Durable Object
  */
 export function rateLimit(options: RateLimitOptions): Middleware {
     const store = new Map<string, { count: number; resetAt: number }>();
+    const maxKeys = options.maxKeys ?? MAX_KEYS_DEFAULT;
+
+    function evictIfNeeded(): void {
+        const now = Date.now();
+        for (const [key, record] of store) {
+            if (now > record.resetAt) {
+                store.delete(key);
+            }
+        }
+        while (store.size >= maxKeys) {
+            const oldest = store.keys().next().value;
+            if (oldest === undefined) break;
+            store.delete(oldest);
+        }
+    }
 
     return async (context: RequestContext): Promise<Response | void> => {
         const key = options.keyGenerator
@@ -49,6 +60,8 @@ export function rateLimit(options: RateLimitOptions): Middleware {
 
         const now = Date.now();
         const windowMs = options.windowSeconds * 1000;
+
+        evictIfNeeded();
 
         let record = store.get(key);
 
@@ -59,23 +72,35 @@ export function rateLimit(options: RateLimitOptions): Middleware {
 
         record.count++;
 
+        const remaining = Math.max(0, options.maxRequests - record.count);
+        const retryAfter = Math.ceil((record.resetAt - now) / 1000);
+
         if (record.count > options.maxRequests) {
-            return errorResponse("Rate limit exceeded", 429);
+            return new Response(JSON.stringify({ error: "Rate limit exceeded" }), {
+                status: 429,
+                headers: {
+                    "Content-Type": "application/json",
+                    "Retry-After": String(Math.max(retryAfter, 1)),
+                    "X-RateLimit-Limit": String(options.maxRequests),
+                    "X-RateLimit-Remaining": "0",
+                    "X-RateLimit-Reset": String(Math.floor(record.resetAt / 1000)),
+                },
+            });
         }
+
+        // Stash headers for successful responses via state (optional consumer)
+        context.state.rateLimitHeaders = {
+            "X-RateLimit-Limit": String(options.maxRequests),
+            "X-RateLimit-Remaining": String(remaining),
+            "X-RateLimit-Reset": String(Math.floor(record.resetAt / 1000)),
+        };
+
         return undefined;
     };
 }
 
 /**
  * Create request validation middleware
- *
- * @example
- * ```typescript
- * app.use(validateRequest({
- *   email: { type: 'email', required: true },
- *   name: { type: 'string', required: true, minLength: 2, maxLength: 100 }
- * }));
- * ```
  */
 export function validateRequest(schema: ValidationSchema): Middleware {
     return async (context: RequestContext): Promise<Response | void> => {
@@ -90,7 +115,6 @@ export function validateRequest(schema: ValidationSchema): Middleware {
         for (const [field, rules] of Object.entries(schema)) {
             const value = body[field];
 
-            // Check required
             if (rules.required && (value === undefined || value === null || value === "")) {
                 errors.push(`${field} is required`);
                 continue;
@@ -100,7 +124,6 @@ export function validateRequest(schema: ValidationSchema): Middleware {
                 continue;
             }
 
-            // Type validation
             if (rules.type === "email") {
                 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
                 if (typeof value !== "string" || !emailRegex.test(value)) {
@@ -137,5 +160,3 @@ export function validateRequest(schema: ValidationSchema): Middleware {
         return undefined;
     };
 }
-
-// Types are already exported via interfaces above

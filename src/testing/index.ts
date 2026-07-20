@@ -74,14 +74,20 @@ export function mockRequest(method: string, url: string, options: MockRequestOpt
         }
     }
 
-    // Add query parameters
-    let finalUrl = url;
+    // Add query parameters — always use absolute URL for Request constructor
+    let finalUrl: string;
+    try {
+        finalUrl = new URL(url).toString();
+    } catch {
+        finalUrl = new URL(url, "http://localhost").toString();
+    }
+
     if (options.params && Object.keys(options.params).length > 0) {
-        const urlObj = new URL(url, "http://localhost");
+        const urlObj = new URL(finalUrl);
         for (const [key, value] of Object.entries(options.params)) {
             urlObj.searchParams.append(key, value);
         }
-        finalUrl = urlObj.pathname + urlObj.search;
+        finalUrl = urlObj.toString();
     }
 
     return new Request(finalUrl, {
@@ -172,16 +178,14 @@ export function createTestApp(app: App): TestApp {
     ): Promise<TestResponse> => {
         const request = mockRequest(method, path, options);
         const response = await app.fetch(request, env, createMockExecutionContext());
+        const body = await response.text();
 
         return {
             status: response.status,
             headers: response.headers,
-            body: await response.text(),
-            json: async <T>() => {
-                const text = await response.clone().text();
-                return JSON.parse(text) as T;
-            },
-            text: async () => response.clone().text(),
+            body,
+            json: async <T>() => JSON.parse(body) as T,
+            text: async () => body,
         };
     };
 

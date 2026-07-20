@@ -33,5 +33,4 @@ export interface D1PreparedStatement {
 
 export interface DatabaseOptions {
     binding: D1Database;
-    migrationsPath?: string;
 }

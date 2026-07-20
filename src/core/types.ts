@@ -2,12 +2,16 @@
  * Core Type Definitions
  */
 
+import type { Plugin } from "../plugins/types";
+
 export interface RequestContext {
     request: Request;
     url: URL;
     env: Record<string, unknown>;
     executionContext: ExecutionContext;
     state: Record<string, unknown>;
+    params: Record<string, string>;
+    query: Record<string, string>;
     [key: string]: unknown;
 }
 
@@ -21,4 +25,6 @@ export interface AppOptions {
     queue?: unknown;
     logger?: unknown;
     auth?: unknown;
+    plugins?: Plugin[];
+    onError?: (error: unknown, context: RequestContext) => Response | Promise<Response>;
 }

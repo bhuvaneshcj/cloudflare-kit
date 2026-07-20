@@ -41,7 +41,7 @@ function createProject(name) {
             "db:migrate": "wrangler d1 migrations apply",
         },
         dependencies: {
-            "cloudflare-kit": "^0.1.0",
+            "cloudflare-kit": "^2.2.0",
         },
         devDependencies: {
             wrangler: "^3.0.0",

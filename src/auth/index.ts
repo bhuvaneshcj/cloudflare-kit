@@ -1,37 +1,64 @@
 /**
  * Authentication Module
  *
- * Provides createAuth() for JWT and session-based authentication.
+ * Provides createAuth() for JWT and session-based authentication,
+ * plus requireAuth() middleware.
  */
 
 import type { D1Database } from "../database/types";
+import type { Middleware, RequestContext } from "../core/types";
+import { AuthError, ConfigError } from "../errors/index";
+import { errorResponse } from "../core/response";
 
-/**
- * Encode string to base64url (URL-safe base64)
- */
-function base64urlEncode(str: string): string {
-    return btoa(str).replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
+function bytesToBase64Url(bytes: Uint8Array): string {
+    let binary = "";
+    for (let i = 0; i < bytes.length; i++) {
+        binary += String.fromCharCode(bytes[i]!);
+    }
+    return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
 }
 
-/**
- * Decode base64url string
- */
-function base64urlDecode(str: string): string {
-    // Restore padding
+function base64UrlToBytes(str: string): Uint8Array {
     const padding = "=".repeat((4 - (str.length % 4)) % 4);
     const base64 = str.replace(/-/g, "+").replace(/_/g, "/") + padding;
-    return atob(base64);
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+        bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes;
 }
 
+function base64urlEncodeJson(value: unknown): string {
+    const json = JSON.stringify(value);
+    return bytesToBase64Url(new TextEncoder().encode(json));
+}
+
+function base64urlDecodeJson<T = unknown>(str: string): T {
+    const bytes = base64UrlToBytes(str);
+    return JSON.parse(new TextDecoder().decode(bytes)) as T;
+}
+
+export type SecretInput = string | ((env: Record<string, unknown>) => string);
+
 export interface AuthOptions {
-    jwtSecret: string;
-    sessionDuration?: number; // in seconds, default 7 days
+    /** JWT secret (alias of jwtSecret) */
+    secret?: SecretInput;
+    /** JWT secret (alias of secret) */
+    jwtSecret?: SecretInput;
+    /** Token lifetime in seconds (alias of sessionDuration) */
+    expiresIn?: number;
+    /** Token lifetime in seconds (alias of expiresIn) */
+    sessionDuration?: number;
+    issuer?: string;
+    audience?: string;
     database?: D1Database;
 }
 
 export interface User {
     id: string;
     email: string;
+    role?: string;
     [key: string]: unknown;
 }
 
@@ -46,100 +73,134 @@ export interface AuthResult {
     user?: User;
     token?: string;
     error?: string;
+    payload?: Record<string, unknown>;
+}
+
+export interface AuthService {
+    createToken(user: User | Record<string, unknown>, env?: Record<string, unknown>): Promise<AuthResult>;
+    verifyToken(authHeaderOrToken: string | null, env?: Record<string, unknown>): Promise<AuthResult>;
+    createSession(user: User): Promise<AuthResult>;
+    verifySession(sessionId: string): Promise<AuthResult>;
+    resolveSecret(env?: Record<string, unknown>): string;
+}
+
+function resolveSecretInput(input: SecretInput | undefined, env?: Record<string, unknown>): string {
+    if (input === undefined) {
+        throw new ConfigError("JWT secret is required (secret or jwtSecret)");
+    }
+    if (typeof input === "function") {
+        if (!env) {
+            throw new ConfigError("JWT secret is a function but no env was provided");
+        }
+        return input(env);
+    }
+    return input;
 }
 
 /**
  * Create an authentication service
- *
- * @example
- * ```typescript
- * const auth = createAuth({
- *   jwtSecret: env.JWT_SECRET,
- *   sessionDuration: 60 * 60 * 24 * 7, // 7 days
- *   database: database
- * });
- *
- * // Create a token for a user
- * const result = await auth.createToken({ id: '123', email: 'user@example.com' });
- *
- * // Verify a token
- * const user = await auth.verifyToken(request.headers.get('Authorization'));
- * ```
  */
-export function createAuth(options: AuthOptions) {
-    const sessionDuration = options.sessionDuration || 60 * 60 * 24 * 7; // 7 days default
+export function createAuth(options: AuthOptions): AuthService {
+    const secretInput = options.secret ?? options.jwtSecret;
+    const sessionDuration = options.expiresIn ?? options.sessionDuration ?? 60 * 60 * 24 * 7;
 
-    // Enforce minimum JWT secret length (256 bits = 32 bytes)
-    if (options.jwtSecret.length < 32) {
-        throw new Error("JWT secret must be at least 32 characters for security");
+    function getSecret(env?: Record<string, unknown>): string {
+        const secret = resolveSecretInput(secretInput, env);
+        if (secret.length < 32) {
+            throw new ConfigError("JWT secret must be at least 32 characters for security");
+        }
+        return secret;
+    }
+
+    // Eager-validate static secrets at creation time
+    if (typeof secretInput === "string") {
+        getSecret();
     }
 
     return {
-        /**
-         * Create a JWT token for a user
-         */
-        async createToken(user: User): Promise<AuthResult> {
+        resolveSecret: getSecret,
+
+        async createToken(user: User | Record<string, unknown>, env?: Record<string, unknown>): Promise<AuthResult> {
             try {
+                const secret = getSecret(env);
                 const header = { alg: "HS256", typ: "JWT" };
                 const now = Math.floor(Date.now() / 1000);
-                const payload = {
-                    sub: user.id,
-                    email: user.email,
+
+                const id = "id" in user && typeof user.id === "string" ? user.id : String((user as { sub?: string }).sub ?? "");
+                const email = typeof user.email === "string" ? user.email : "";
+
+                const payload: Record<string, unknown> = {
+                    sub: id,
+                    email,
                     iat: now,
                     exp: now + sessionDuration,
+                    ...("role" in user && user.role !== undefined ? { role: user.role } : {}),
                 };
 
-                const encodedHeader = base64urlEncode(JSON.stringify(header));
-                const encodedPayload = base64urlEncode(JSON.stringify(payload));
+                if (options.issuer) payload.iss = options.issuer;
+                if (options.audience) payload.aud = options.audience;
+
+                // Allow extra claims from user object (except reserved)
+                for (const [key, value] of Object.entries(user)) {
+                    if (!["id", "email", "role", "sub", "iat", "exp", "iss", "aud"].includes(key)) {
+                        payload[key] = value;
+                    }
+                }
+
+                const encodedHeader = base64urlEncodeJson(header);
+                const encodedPayload = base64urlEncodeJson(payload);
                 const data = `${encodedHeader}.${encodedPayload}`;
 
-                // Sign the token
                 const encoder = new TextEncoder();
                 const key = await crypto.subtle.importKey(
                     "raw",
-                    encoder.encode(options.jwtSecret),
+                    encoder.encode(secret),
                     { name: "HMAC", hash: "SHA-256" },
                     false,
                     ["sign"],
                 );
 
                 const signature = await crypto.subtle.sign("HMAC", key, encoder.encode(data));
-                const encodedSignature = base64urlEncode(String.fromCharCode(...new Uint8Array(signature)));
-
+                const encodedSignature = bytesToBase64Url(new Uint8Array(signature));
                 const token = `${data}.${encodedSignature}`;
 
-                return { success: true, user, token };
+                const resultUser: User = {
+                    id,
+                    email,
+                    ...(typeof user.role === "string" ? { role: user.role } : {}),
+                };
+
+                return { success: true, user: resultUser, token, payload };
             } catch (error) {
+                if (error instanceof ConfigError) throw error;
                 return { success: false, error: "Failed to create token" };
             }
         },
 
-        /**
-         * Verify a JWT token
-         */
-        async verifyToken(authHeader: string | null): Promise<AuthResult> {
-            if (!authHeader?.startsWith("Bearer ")) {
+        async verifyToken(authHeaderOrToken: string | null, env?: Record<string, unknown>): Promise<AuthResult> {
+            if (!authHeaderOrToken) {
                 return { success: false, error: "Invalid authorization header" };
             }
 
-            const token = authHeader.slice(7);
+            const token = authHeaderOrToken.startsWith("Bearer ")
+                ? authHeaderOrToken.slice(7)
+                : authHeaderOrToken;
 
             try {
+                const secret = getSecret(env);
                 const [encodedHeader, encodedPayload, encodedSignature] = token.split(".");
 
                 if (!encodedHeader || !encodedPayload || !encodedSignature) {
                     return { success: false, error: "Invalid token format" };
                 }
 
-                // Parse and validate header first (CRITICAL: prevents alg=none attack)
                 let header: { alg?: string; typ?: string };
                 try {
-                    header = JSON.parse(base64urlDecode(encodedHeader));
+                    header = base64urlDecodeJson(encodedHeader);
                 } catch {
                     return { success: false, error: "Invalid token header" };
                 }
 
-                // STRICT algorithm validation - prevents algorithm confusion attacks
                 if (header.alg !== "HS256") {
                     return { success: false, error: "Invalid algorithm" };
                 }
@@ -147,46 +208,52 @@ export function createAuth(options: AuthOptions) {
                     return { success: false, error: "Invalid token type" };
                 }
 
-                // Verify signature
                 const data = `${encodedHeader}.${encodedPayload}`;
                 const encoder = new TextEncoder();
                 const key = await crypto.subtle.importKey(
                     "raw",
-                    encoder.encode(options.jwtSecret),
+                    encoder.encode(secret),
                     { name: "HMAC", hash: "SHA-256" },
                     false,
                     ["verify"],
                 );
 
-                const signatureBytes = Uint8Array.from(base64urlDecode(encodedSignature), (c) => c.charCodeAt(0));
+                const signatureBytes = base64UrlToBytes(encodedSignature);
                 const isValid = await crypto.subtle.verify("HMAC", key, signatureBytes, encoder.encode(data));
 
                 if (!isValid) {
                     return { success: false, error: "Invalid token signature" };
                 }
 
-                // Parse payload
-                const payload = JSON.parse(base64urlDecode(encodedPayload));
+                const payload = base64urlDecodeJson<Record<string, unknown>>(encodedPayload);
 
-                // Check expiration
-                if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) {
+                if (typeof payload.exp !== "number") {
+                    return { success: false, error: "Token missing expiration" };
+                }
+                if (payload.exp < Math.floor(Date.now() / 1000)) {
                     return { success: false, error: "Token expired" };
                 }
 
+                if (options.issuer && payload.iss !== options.issuer) {
+                    return { success: false, error: "Invalid issuer" };
+                }
+                if (options.audience && payload.aud !== options.audience) {
+                    return { success: false, error: "Invalid audience" };
+                }
+
                 const user: User = {
-                    id: payload.sub,
-                    email: payload.email,
+                    id: String(payload.sub ?? ""),
+                    email: String(payload.email ?? ""),
+                    ...(typeof payload.role === "string" ? { role: payload.role } : {}),
                 };
 
-                return { success: true, user };
-            } catch {
+                return { success: true, user, payload };
+            } catch (error) {
+                if (error instanceof ConfigError) throw error;
                 return { success: false, error: "Invalid token" };
             }
         },
 
-        /**
-         * Create a session (for cookie-based auth)
-         */
         async createSession(user: User): Promise<AuthResult> {
             if (!options.database) {
                 return { success: false, error: "Database required for sessions" };
@@ -196,11 +263,10 @@ export function createAuth(options: AuthOptions) {
             const expiresAt = new Date(Date.now() + sessionDuration * 1000);
 
             try {
-                await options.database.execute("INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, ?)", [
-                    sessionId,
-                    user.id,
-                    expiresAt.toISOString(),
-                ]);
+                await options.database
+                    .prepare("INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, ?)")
+                    .bind(sessionId, user.id, expiresAt.toISOString())
+                    .run();
 
                 return {
                     success: true,
@@ -212,21 +278,20 @@ export function createAuth(options: AuthOptions) {
             }
         },
 
-        /**
-         * Verify a session
-         */
         async verifySession(sessionId: string): Promise<AuthResult> {
             if (!options.database) {
                 return { success: false, error: "Database required for sessions" };
             }
 
             try {
-                const result = await options.database.query(
-                    'SELECT s.*, u.id as user_id, u.email FROM sessions s JOIN users u ON s.user_id = u.id WHERE s.id = ? AND s.expires_at > datetime("now")',
-                    [sessionId],
-                );
+                const result = await options.database
+                    .prepare(
+                        'SELECT s.*, u.id as user_id, u.email FROM sessions s JOIN users u ON s.user_id = u.id WHERE s.id = ? AND s.expires_at > datetime("now")',
+                    )
+                    .bind(sessionId)
+                    .all();
 
-                if (result.results.length === 0) {
+                if (!result.results || result.results.length === 0) {
                     return { success: false, error: "Invalid or expired session" };
                 }
 
@@ -244,4 +309,33 @@ export function createAuth(options: AuthOptions) {
     };
 }
 
-// Types are already exported via interfaces above
+export interface RequireAuthOptions {
+    roles?: string[];
+}
+
+/**
+ * Middleware that requires a valid JWT Bearer token
+ */
+export function requireAuth(auth: AuthService, options: RequireAuthOptions = {}): Middleware {
+    return async (context: RequestContext): Promise<Response | void> => {
+        const header = context.request.headers.get("Authorization");
+        const result = await auth.verifyToken(header, context.env);
+
+        if (!result.success || !result.user) {
+            return errorResponse(result.error || "Authentication required", 401);
+        }
+
+        if (options.roles && options.roles.length > 0) {
+            const role = result.user.role;
+            if (!role || !options.roles.includes(role)) {
+                const err = AuthError.insufficientPermissions();
+                return err.toResponse();
+            }
+        }
+
+        context.state.user = result.user;
+        context.state.payload = result.payload;
+        (context as RequestContext & { user?: User }).user = result.user;
+        return undefined;
+    };
+}

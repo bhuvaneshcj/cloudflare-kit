@@ -30,8 +30,8 @@ export type { Middleware, RequestContext, AppOptions, Handler } from "./core/typ
 export type { RouterContext, Router, App } from "./core/app";
 
 // Auth
-export { createAuth } from "./auth/index";
-export type { AuthOptions, User, Session, AuthResult } from "./auth/index";
+export { createAuth, requireAuth } from "./auth/index";
+export type { AuthOptions, User, Session, AuthResult, AuthService, RequireAuthOptions } from "./auth/index";
 
 // Database
 export { createDatabase } from "./database/index";
@@ -42,8 +42,14 @@ export { createCache } from "./cache/index";
 export type { CacheOptions, CacheService, CacheEntry } from "./cache/index";
 
 // Storage
-export { createStorage } from "./storage/index";
-export type { StorageOptions, StorageService, UploadResult, DownloadResult } from "./storage/index";
+export { createStorage, verifySignedUploadToken } from "./storage/index";
+export type {
+    StorageOptions,
+    StorageService,
+    UploadResult,
+    DownloadResult,
+    SignedUploadPayload,
+} from "./storage/index";
 
 // Queue
 export { createQueue, createQueueConsumer } from "./queue/index";
@@ -58,7 +64,12 @@ export { rateLimit, validateRequest } from "./security/index";
 export type { RateLimitOptions, ValidationSchema } from "./security/index";
 
 // Rate Limiter (Enterprise)
-export { createRateLimiter, createMemoryRateLimitStore, createKVRateLimitStore } from "./security/rate-limiter/index";
+export {
+    createRateLimiter,
+    createMemoryRateLimitStore,
+    createKVRateLimitStore,
+    createRateLimitMiddleware,
+} from "./security/rate-limiter/index";
 export type {
     RateLimiter,
     RateLimiterConfig,

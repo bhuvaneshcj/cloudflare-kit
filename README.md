@@ -35,9 +35,12 @@ import {
     createLogger,
     corsMiddleware,
     jsonMiddleware,
+    securityHeadersMiddleware,
     requireAuth,
     v,
     createValidator,
+    jsonResponse,
+    errorResponse,
 } from "cloudflare-kit";
 
 interface Env {
@@ -46,64 +49,66 @@ interface Env {
     CACHE: KVNamespace;
 }
 
-const app = createApp();
-const logger = createLogger({ level: "info" });
-const auth = createAuth({ secret: (env) => env.JWT_SECRET });
-const db = createDatabase({ binding: (env) => env.DB });
-const cache = createCache({ binding: (env) => env.CACHE });
+export default {
+    async fetch(request: Request, env: Env, executionContext: ExecutionContext) {
+        const app = createApp();
+        const logger = createLogger({ level: "info" });
+        const auth = createAuth({ secret: env.JWT_SECRET, expiresIn: 86400 });
+        const db = createDatabase({ binding: env.DB });
+        const cache = createCache({ binding: env.CACHE });
 
-// Global middleware
-app.use(corsMiddleware());
-app.use(jsonMiddleware());
-app.use(logger.requestLogger());
+        app.use(corsMiddleware());
+        app.use(jsonMiddleware());
+        app.use(securityHeadersMiddleware());
+        app.use(logger.requestLogger());
 
-// Auth routes
-app.post("/auth/login", async (ctx) => {
-    const { email, password } = ctx.body as { email: string; password: string };
-    const user = await db.get<{ id: string; email: string }>(
-        "SELECT * FROM users WHERE email = ? AND password_hash = ?",
-        [email, await hashPassword(password)],
-    );
-    if (!user) return errorResponse("Invalid credentials", 401);
-    const token = await auth.createToken({ sub: user.id, email: user.email });
-    return jsonResponse({ token, user: { id: user.id, email: user.email } });
-});
+        app.post("/auth/login", async (ctx) => {
+            const body = (ctx.state.body || {}) as { email?: string; password?: string };
+            const user = await db.get<{ id: string; email: string }>(
+                "SELECT * FROM users WHERE email = ?",
+                [body.email],
+            );
+            if (!user) return errorResponse("Invalid credentials", 401);
+            const result = await auth.createToken({ id: user.id, email: user.email }, ctx.env);
+            return jsonResponse({ token: result.token, user: { id: user.id, email: user.email } });
+        });
 
-// Protected API with validation
-const userSchema = v.object({
-    name: v.string().minLength(2).maxLength(100),
-    email: v.email(),
-    age: v.number().min(18).optional(),
-});
+        const userSchema = v.object({
+            name: v.string().minLength(2).maxLength(100),
+            email: v.email(),
+            age: v.number().min(18).optional(),
+        });
 
-app.post("/api/users", requireAuth(auth), createValidator(userSchema), async (ctx) => {
-    const userData = ctx.body as { name: string; email: string; age?: number };
-    const cacheKey = `user:email:${userData.email}`;
-    return cache.getOrSet(
-        cacheKey,
-        async () => {
-            const result = await db.execute("INSERT INTO users (name, email, age) VALUES (?, ?, ?)", [
-                userData.name,
-                userData.email,
-                userData.age || null,
-            ]);
-            return jsonResponse({ id: result.meta.last_row_id, ...userData }, 201);
-        },
-        300,
-    );
-});
+        app.post(
+            "/api/users",
+            requireAuth(auth),
+            createValidator({ body: userSchema }),
+            async (ctx) => {
+                const userData = ctx.state.body as { name: string; email: string; age?: number };
+                const result = await db.execute(
+                    "INSERT INTO users (name, email, age) VALUES (?, ?, ?)",
+                    [userData.name, userData.email, userData.age ?? null],
+                );
+                return jsonResponse({ id: result.meta?.last_row_id, ...userData }, 201);
+            },
+        );
 
-// Dynamic routes
-app.get("/api/users/:id", async (ctx) => {
-    const cacheKey = `user:${ctx.params.id}`;
-    const user = await cache.getOrSet(cacheKey, () => db.get("SELECT * FROM users WHERE id = ?", [ctx.params.id]), 300);
-    if (!user) return errorResponse("User not found", 404);
-    return jsonResponse(user);
-});
+        app.get("/api/users/:id", async (ctx) => {
+            const user = await cache.getOrSet(
+                `user:${ctx.params.id}`,
+                () => db.get("SELECT * FROM users WHERE id = ?", [ctx.params.id]),
+                300,
+            );
+            if (!user) return errorResponse("User not found", 404);
+            return jsonResponse(user);
+        });
 
-export default app;
+        return app.fetch(request, env as unknown as Record<string, unknown>, executionContext);
+    },
+};
 ```
 
+Middleware returns `Response` to short-circuit, or `void`/`undefined` to continue. There is no Express-style `next()` callback.
 ## Features
 
 | Module                     | What it does                                        | Cloudflare Primitive |
@@ -137,21 +142,21 @@ export default app;
 
 ### createApp
 
-HTTP router with Express-like API. Supports dynamic routes (`:id`), wildcards (`*`), route groups, and middleware chain with `next()`.
+HTTP router with Express-like API. Supports dynamic routes (`:id`), wildcards (`*`), route groups, and middleware that returns a `Response` to stop the chain (no `next()`).
 
 ```typescript
-import { createApp, createLogger, corsMiddleware, jsonMiddleware } from "cloudflare-kit";
+import { createApp, createLogger, corsMiddleware, jsonMiddleware, errorResponse } from "cloudflare-kit";
 
 const app = createApp({
-    onError: (error, request) => {
-        console.error(`Error handling ${request.url}:`, error);
+    onError: (error, ctx) => {
+        console.error(`Error handling ${ctx.request.url}:`, error);
         return errorResponse("Internal server error", 500);
     },
 });
 
 // Middleware
-app.use(corsMiddleware({ origin: ["https://example.com"] }));
-app.use(jsonMiddleware({ maxSize: "1mb" }));
+app.use(corsMiddleware({ origin: "https://example.com" }));
+app.use(jsonMiddleware());
 
 // Routes
 app.get("/health", () => jsonResponse({ status: "ok" }));
@@ -160,7 +165,7 @@ app.get("/users/:id", async (ctx) => {
 });
 app.group("/api/v1", (router) => {
     router.get("/posts", listPosts);
-    router.post("/posts", requireAuth, createPost);
+    router.post("/posts", requireAuth(auth), createPost);
 });
 
 export default app;
@@ -174,24 +179,25 @@ JWT authentication with HS256. Create tokens, verify them, and extract user data
 import { createAuth } from "cloudflare-kit";
 
 const auth = createAuth({
-    secret: (env) => env.JWT_SECRET, // Must be 32+ characters
-    expiresIn: 86400, // 24 hours
+    secret: env.JWT_SECRET, // or jwtSecret; must be 32+ characters
+    expiresIn: 86400, // or sessionDuration; 24 hours
     issuer: "my-app",
     audience: "api",
 });
 
 // Create token
-const token = await auth.createToken({ sub: "user-123", email: "john@example.com", role: "admin" });
+const result = await auth.createToken({ id: "user-123", email: "john@example.com", role: "admin" });
+const token = result.token!;
 
-// Verify token
-const result = await auth.verifyToken(token);
-if (result.success) {
-    console.log(result.payload.sub); // user-123
+// Verify token (Bearer header or raw JWT)
+const verified = await auth.verifyToken(`Bearer ${token}`);
+if (verified.success) {
+    console.log(verified.user?.id); // user-123
 }
 
 // Middleware usage
 app.get("/profile", requireAuth(auth), async (ctx) => {
-    return jsonResponse({ userId: ctx.user.sub });
+    return jsonResponse({ userId: (ctx.state.user as { id: string }).id });
 });
 ```
 

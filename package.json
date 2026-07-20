@@ -1,6 +1,6 @@
 {
     "name": "cloudflare-kit",
-    "version": "2.1.0",
+    "version": "2.2.0",
     "description": "The enterprise-grade toolkit for building Cloudflare Workers with simple, clear APIs",
     "keywords": [
         "cloudflare",
@@ -41,6 +41,9 @@
     "main": "./dist/index.cjs",
     "module": "./dist/index.js",
     "types": "./dist/index.d.ts",
+    "bin": {
+        "cloudflare-kit": "./cli/index.js"
+    },
     "exports": {
         ".": {
             "import": {
@@ -52,10 +55,21 @@
                 "default": "./dist/index.cjs"
             }
         },
+        "./testing": {
+            "import": {
+                "types": "./dist/testing/index.d.ts",
+                "default": "./dist/testing/index.js"
+            },
+            "require": {
+                "types": "./dist/testing/index.d.cts",
+                "default": "./dist/testing/index.cjs"
+            }
+        },
         "./package.json": "./package.json"
     },
     "files": [
         "dist",
+        "cli",
         "README.md",
         "LICENSE",
         "CHANGELOG.md",
@@ -70,12 +84,15 @@
         "dev": "tsup --watch",
         "typecheck": "tsc --noEmit",
         "lint": "tsc --noEmit",
-        "prepublishOnly": "npm run build"
+        "test": "vitest run",
+        "test:watch": "vitest",
+        "prepublishOnly": "npm run build && npm test"
     },
     "devDependencies": {
         "@cloudflare/workers-types": "^4.20240208.0",
         "tsup": "^8.0.2",
-        "typescript": "^5.3.3"
+        "typescript": "^5.3.3",
+        "vitest": "^2.1.0"
     },
     "peerDependencies": {
         "@cloudflare/workers-types": "^4.0.0"

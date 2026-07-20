@@ -156,6 +156,34 @@ export function createLogger(options: LoggerOptions = {}) {
         },
 
         /**
+         * Middleware that logs each request with a request id, method, path, status, and duration
+         */
+        requestLogger(): import("../core/types").Middleware {
+            return async (context) => {
+                const requestId = crypto.randomUUID();
+                const start = Date.now();
+                context.state.requestId = requestId;
+
+                const childLogger = createLogger({ level: minLevel, service, environment }).child({ requestId });
+                context.state.logger = childLogger;
+
+                const method = context.request.method;
+                const path = context.url.pathname;
+
+                context.state._logRequest = (status: number) => {
+                    childLogger.info("request", {
+                        method,
+                        path,
+                        status,
+                        durationMs: Date.now() - start,
+                    });
+                };
+
+                return undefined;
+            };
+        },
+
+        /**
          * Get current log level
          */
         getLevel(): string {
